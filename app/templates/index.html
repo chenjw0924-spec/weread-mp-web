@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>微信读书公众号归档</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">WEREAD MP ARCHIVE</p>
+        <h1>微信读书公众号归档</h1>
+        <p class="lede">从你已关注的公众号中选择文章，导出为本地 Markdown ZIP。</p>
+      </div>
+      <button id="logout" class="button quiet" type="button" hidden>退出</button>
+    </header>
+
+    <section id="login-panel" class="panel lock-panel">
+      <h2>输入访问密码</h2>
+      <p>密码只用于保护这个自用站点，不会上传到微信读书。</p>
+      <form id="login-form" class="stack">
+        <label>访问密码<input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="button primary" type="submit">进入归档台</button>
+      </form>
+    </section>
+
+    <div id="app-panel" hidden>
+      <section class="panel connection-panel">
+        <div class="section-heading"><div><p class="eyebrow">连接</p><h2>微信读书 Cookie</h2></div><span id="connection-state" class="status">未连接</span></div>
+        <form id="connect-form" class="stack">
+          <label>Cookie<input id="cookie" type="password" autocomplete="off" placeholder="粘贴浏览器中的 Cookie 请求头" required></label>
+          <div class="actions"><button class="button primary" type="submit">验证并连接</button><button id="disconnect" class="button quiet" type="button" hidden>断开连接</button></div>
+        </form>
+        <p id="message" class="message" role="status"></p>
+      </section>
+
+      <section class="panel" id="accounts-panel" hidden>
+        <div class="section-heading"><div><p class="eyebrow">公众号</p><h2>选择已关注公众号</h2></div><button id="refresh-accounts" class="button quiet" type="button">刷新</button></div>
+        <label>公众号<select id="account-select"><option value="">请选择</option></select></label>
+        <div id="coverage" class="coverage"></div>
+      </section>
+
+      <section class="panel" id="articles-panel" hidden>
+        <div class="section-heading"><div><p class="eyebrow">文章列表</p><h2>选择要归档的文章</h2></div><button id="load-articles" class="button quiet" type="button">重新读取</button></div>
+        <div class="filters"><input id="search" type="search" placeholder="搜索标题或摘要"><label>从<input id="from-date" type="date"></label><label>到<input id="to-date" type="date"></label></div>
+        <div class="selection-bar"><label><input id="select-visible" type="checkbox"> 选择当前可见</label><span id="selected-count">已选 0 篇</span></div>
+        <div id="articles" class="article-list" aria-live="polite"></div>
+        <div class="export-bar"><label class="toggle"><input id="include-images" type="checkbox"> 下载图片</label><button id="export" class="button primary" type="button" disabled>导出选中文章</button></div>
+      </section>
+
+      <section class="panel" id="job-panel" hidden>
+        <div class="section-heading"><div><p class="eyebrow">导出任务</p><h2 id="job-title">准备中</h2></div><a id="download" class="button primary" hidden>下载 ZIP</a></div>
+        <div class="progress-track"><div id="progress" class="progress-value"></div></div>
+        <p id="job-status" class="message" role="status"></p>
+        <ul id="failures" class="failures"></ul>
+        <button id="retry" class="button quiet" type="button" hidden>重试失败文章</button>
+      </section>
+    </div>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

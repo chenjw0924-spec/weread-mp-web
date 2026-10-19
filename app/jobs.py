@@ -21,6 +21,7 @@ class ArchiveJob:
     failures: list[tuple[str, str]] = field(default_factory=list)
     warnings: list[tuple[str, str]] = field(default_factory=list)
     zip_path: str | None = None
+    fetch_article: Callable[[ListedArticle], str] | None = field(default=None, repr=False)
 
 
 class JobRegistry:
@@ -30,7 +31,7 @@ class JobRegistry:
         self.executor = ThreadPoolExecutor(max_workers=max_jobs, thread_name_prefix="weread-archive")
         self._lock = threading.RLock()
 
-    def start(self, session: Session, book_id: str, article_ids: list[str], include_images: bool) -> ArchiveJob:
+    def start(self, session: Session, book_id: str, article_ids: list[str], include_images: bool, fetch_article: Callable[[ListedArticle], str] | None = None) -> ArchiveJob:
         snapshot = {
             str(article.get("original_id")): ListedArticle(
                 title=str(article.get("title") or "未命名文章"),
@@ -49,9 +50,10 @@ class JobRegistry:
             active = sum(job.status in {"queued", "running"} for job in session.jobs.values())
             if active >= self.archive_service.settings.max_job_count:
                 raise ValueError("归档任务过多，请等待当前任务完成")
-            job = ArchiveJob(uuid.uuid4().hex, [item.original_id for item in selected], include_images, total=len(selected))
+            callback = fetch_article or self.fetch_article
+            job = ArchiveJob(uuid.uuid4().hex, [item.original_id for item in selected], include_images, total=len(selected), fetch_article=callback)
             session.jobs[job.job_id] = job
-        self.executor.submit(self._run, session, job, selected, book_id)
+        self.executor.submit(self._run, session, job, selected, book_id, callback)
         return job
 
     def get(self, session: Session, job_id: str) -> ArchiveJob | None:
@@ -61,7 +63,9 @@ class JobRegistry:
         previous = self.get(session, job_id)
         if previous is None:
             raise KeyError(job_id)
-        return self.start(session, self._book_for(session, previous), [item_id for item_id, _ in previous.failures], previous.include_images)
+        if previous.fetch_article is None:
+            raise ValueError("任务缺少文章请求上下文")
+        return self.start(session, self._book_for(session, previous), [item_id for item_id, _ in previous.failures], previous.include_images, previous.fetch_article)
 
     def _book_for(self, session: Session, job: ArchiveJob) -> str:
         for book_id, articles in session.articles.items():
@@ -70,13 +74,13 @@ class JobRegistry:
                 return book_id
         raise ValueError("文章列表已过期，请重新加载")
 
-    def _run(self, session: Session, job: ArchiveJob, articles: list[ListedArticle], book_id: str) -> None:
+    def _run(self, session: Session, job: ArchiveJob, articles: list[ListedArticle], book_id: str, fetch_article: Callable[[ListedArticle], str]) -> None:
         with self._lock:
             job.status = "running"
         def update(value: int) -> None:
             with self._lock:
                 job.progress = value
-        result: ArchiveResult = self.archive_service.archive(articles, self.fetch_article, job.include_images, update, book_id)
+        result: ArchiveResult = self.archive_service.archive(articles, fetch_article, job.include_images, update, book_id)
         with self._lock:
             job.status = "completed" if not result.failures else "failed"
             job.progress = 100
