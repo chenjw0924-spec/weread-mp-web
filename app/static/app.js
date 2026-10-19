@@ -56,7 +56,6 @@
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
   };
   const showScan = () => {
-    $('public-info').hidden = true;
     $('operation-guide').hidden = false;
     $('connect-panel').hidden = true; $('scan-panel').hidden = false;
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
@@ -324,7 +323,7 @@
       const data = await api('/api/weread/qr/start', { method: 'POST', timeoutMs: 30000 });
       if (version !== state.qrVersion) return;
       state.qrLoginId = data.login_id; state.qrStatusUrl = data.status_url;
-      $('qr-image').src = `${data.image_url}?v=${encodeURIComponent(data.login_id)}`;
+      $('qr-image').src = data.image_data || `${data.image_url}?v=${encodeURIComponent(data.login_id)}`;
       $('qr-refresh').disabled = false; setQrStatus(data.state, data.message);
       await pollQrLogin(version);
     } catch (error) {

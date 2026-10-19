@@ -60,7 +60,7 @@ test('anonymous session starts the real QR flow on page load', async () => {
   const ui = await setup((url) => {
     if (url === '/api/weread/qr/start') return response(200, {
       login_id: 'qr-test', state: 'waiting', message: '请使用微信扫描二维码。',
-      expires_at: 1890000000, image_url: '/api/weread/qr/qr-test/image', status_url: '/api/weread/qr/qr-test/status',
+      expires_at: 1890000000, image_url: '/api/weread/qr/qr-test/image', image_data: 'data:image/svg+xml;base64,QR', status_url: '/api/weread/qr/qr-test/status',
     });
     if (url === '/api/weread/qr/qr-test/status') return response(200, {
       login_id: 'qr-test', state: 'success', message: '微信读书已连接。', connected: true,
@@ -81,7 +81,7 @@ test('scan login still pauses for the phone OTP and submits four digits', async 
   const ui = await setup((url, options) => {
     if (url === '/api/weread/qr/start') return response(200, {
       login_id: 'qr-otp', state: 'waiting', message: '请使用微信扫描二维码。',
-      expires_at: 1890000000, image_url: '/api/weread/qr/qr-otp/image', status_url: '/api/weread/qr/qr-otp/status',
+      expires_at: 1890000000, image_url: '/api/weread/qr/qr-otp/image', image_data: 'data:image/svg+xml;base64,QR', status_url: '/api/weread/qr/qr-otp/status',
     });
     if (url === '/api/weread/qr/qr-otp/status') {
       statusPolls++;
@@ -101,6 +101,7 @@ test('scan login still pauses for the phone OTP and submits four digits', async 
   });
   await flush();
   assert.equal(ui.elements.get('otp-form').hidden, true);
+  assert.equal(ui.elements.get('public-info').hidden, false);
   const poll = [...ui.timeouts.values()][0];
   assert.ok(poll);
   poll();
@@ -124,7 +125,7 @@ test('QR start retries a transient upstream failure before showing an error', as
       if (starts === 1) return response(503, { detail: { kind: 'qr_unavailable', message: '暂时不可用' } });
       return response(200, {
         login_id: 'qr-retry', state: 'waiting', message: '请使用微信扫描二维码。',
-        expires_at: 1890000000, image_url: '/api/weread/qr/qr-retry/image', status_url: '/api/weread/qr/qr-retry/status',
+        expires_at: 1890000000, image_url: '/api/weread/qr/qr-retry/image', image_data: 'data:image/svg+xml;base64,QR', status_url: '/api/weread/qr/qr-retry/status',
       });
     }
     if (url === '/api/weread/qr/qr-retry/status') return response(200, { login_id: 'qr-retry', state: 'waiting', connected: false });
