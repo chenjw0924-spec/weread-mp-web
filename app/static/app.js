@@ -49,10 +49,12 @@
   const stopQrPolling = () => { clearTimeout(state.qrTimer); state.qrTimer = null; state.qrVersion++; state.qrPolling = false; };
   const showConnection = () => {
     stopQrPolling(); state.qrLoginId = ''; state.qrStatusUrl = ''; state.qrScanned = false;
+    $('operation-guide').hidden = false;
     $('connect-panel').hidden = false; $('scan-panel').hidden = true;
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
   };
   const showScan = () => {
+    $('operation-guide').hidden = false;
     $('connect-panel').hidden = true; $('scan-panel').hidden = false;
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
   };
@@ -62,6 +64,7 @@
     showConnection();
   };
   const showSelection = () => {
+    $('operation-guide').hidden = true;
     $('connect-panel').hidden = true; $('scan-panel').hidden = true;
     $('selection-panel').hidden = false; $('dock').hidden = false; step(2);
   };

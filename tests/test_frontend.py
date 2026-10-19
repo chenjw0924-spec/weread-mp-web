@@ -49,6 +49,8 @@ def test_homepage_includes_collapsed_operation_guide():
     guide = page.select_one("#operation-guide")
 
     assert guide is not None
+    assert guide.parent.select_one(":scope > #operation-guide") is guide
+    assert guide.parent.get("class") == ["shell", "operation-guide-top"]
     assert guide.name == "details"
     assert not guide.has_attr("open")
     assert guide.select_one("summary strong").get_text(" ", strip=True) == "操作指引"
