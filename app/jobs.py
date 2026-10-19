@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Callable
 
 from .archive import ArchiveResult, ArchiveService
@@ -22,6 +24,7 @@ class ArchiveJob:
     warnings: list[tuple[str, str]] = field(default_factory=list)
     zip_path: str | None = None
     fetch_article: Callable[[ListedArticle], str] | None = field(default=None, repr=False)
+    created_at: float = field(default_factory=time.time, repr=False)
 
 
 class JobRegistry:
@@ -57,7 +60,20 @@ class JobRegistry:
         return job
 
     def get(self, session: Session, job_id: str) -> ArchiveJob | None:
-        return session.jobs.get(job_id)
+        job = session.jobs.get(job_id)
+        if job and job.zip_path:
+            path = Path(job.zip_path)
+            try:
+                expired = time.time() - path.stat().st_mtime > self.archive_service.settings.artifact_ttl_seconds
+            except OSError:
+                expired = True
+            if expired:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                job.zip_path = None
+        return job
 
     def retry_failed(self, session: Session, job_id: str) -> ArchiveJob:
         previous = self.get(session, job_id)

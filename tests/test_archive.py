@@ -1,4 +1,6 @@
 import io
+import os
+from pathlib import Path
 import time
 import zipfile
 
@@ -114,3 +116,20 @@ def test_job_registry_retries_only_failed_ids_and_denies_cross_session_access(tm
     retried = wait_done(registry, session1, retry.job_id)
     assert retried.failures == []
     assert attempts == ["ok", "bad", "bad"]
+
+
+def test_expired_zip_is_removed_when_job_is_read(tmp_path):
+    settings = Settings(app_password="test-password-long", max_job_count=2, artifact_ttl_seconds=60)
+    auth = AuthManager(settings)
+    token = auth.login("test-password-long", "one", now=1)
+    session = auth.get_session(token, now=1)
+    session.articles["MP_WXS_1"] = [{"title": "文章", "summary": "", "account_name": "号", "original_id": "a", "published_at": 1767225600}]
+    registry = JobRegistry(ArchiveService(settings, temp_dir=tmp_path), lambda item: parsed_html(item.title))
+    job = registry.start(session, "MP_WXS_1", ["a"], False)
+    finished = wait_done(registry, session, job.job_id)
+    zip_path = Path(finished.zip_path)
+    old = time.time() - 120
+    os.utime(zip_path, (old, old))
+
+    assert registry.get(session, job.job_id).zip_path is None
+    assert not zip_path.exists()
