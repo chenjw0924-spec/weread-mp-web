@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 import json
+import logging
 import random
 import re
 import time
@@ -19,6 +20,7 @@ USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+LOGGER = logging.getLogger("weread.client")
 
 
 class WeReadError(Exception):
@@ -79,6 +81,8 @@ class WeReadClient:
         self.settings = settings or Settings.from_env()
         self._urlopen = urlopen
         self._sleep = sleep
+
+    _ARTICLE_RETRY_DELAYS = (1.0, 2.5)
 
     @staticmethod
     def parse_cookie_header(cookie: str) -> dict[str, str]:
@@ -283,28 +287,60 @@ class WeReadClient:
             f"{WEREAD_ORIGIN}/web/mp/content?reviewId={review_id}",
             headers=self._headers(cookie),
         )
-        try:
-            with self._urlopen(request, timeout=30) as response:
-                raw = response.read(self.settings.max_response_bytes + 1)
-        except urllib.error.HTTPError as exc:
-            if exc.code in (401, 403):
-                raise WeReadError("WeRead login expired. Reconnect with a fresh Cookie.", "expired") from exc
-            if exc.code == 429:
-                raise WeReadError("WeRead temporarily limited this request. Wait before trying again.", "rate_limited") from exc
-            raise WeReadError(f"WeRead article request failed with HTTP {exc.code}.", "upstream") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise WeReadError("Could not reach WeRead while loading an article.", "network") from exc
-        if len(raw) > self.settings.max_response_bytes:
-            raise WeReadError("Article response exceeded the configured size limit.", "response_too_large")
-        html = raw.decode("utf-8", "replace")
-        if html.lstrip().startswith("{"):
+        for attempt in range(len(self._ARTICLE_RETRY_DELAYS) + 1):
+            retry_reason = "transient"
             try:
-                data = json.loads(html)
-            except json.JSONDecodeError:
+                with self._urlopen(request, timeout=30) as response:
+                    status = int(getattr(response, "status", 200) or 200)
+                    if status in (401, 403):
+                        raise WeReadError("WeRead login expired. Reconnect with a fresh Cookie.", "expired")
+                    if status == 429:
+                        raise WeReadError("WeRead temporarily limited this request. Wait before trying again.", "rate_limited")
+                    if status >= 500:
+                        raise WeReadError(f"WeRead article request failed with HTTP {status}.", "upstream")
+                    raw = response.read(self.settings.max_response_bytes + 1)
+                if len(raw) > self.settings.max_response_bytes:
+                    raise WeReadError("Article response exceeded the configured size limit.", "response_too_large")
+                html = raw.decode("utf-8", "replace")
+                if html.lstrip().startswith("{"):
+                    try:
+                        data = json.loads(html)
+                    except json.JSONDecodeError:
+                        return html
+                    if isinstance(data, dict):
+                        self._raise_for_api_error(data)
                 return html
-            if isinstance(data, dict):
-                self._raise_for_api_error(data)
-        return html
+            except urllib.error.HTTPError as exc:
+                if exc.code in (401, 403):
+                    raise WeReadError("WeRead login expired. Reconnect with a fresh Cookie.", "expired") from exc
+                if exc.code == 429:
+                    error = WeReadError("WeRead temporarily limited this request. Wait before trying again.", "rate_limited")
+                elif exc.code >= 500:
+                    error = WeReadError(f"WeRead article request failed with HTTP {exc.code}.", "upstream")
+                else:
+                    raise WeReadError(f"WeRead article request failed with HTTP {exc.code}.", "upstream") from exc
+                if attempt >= len(self._ARTICLE_RETRY_DELAYS):
+                    raise error from exc
+                retry_reason = error.kind
+            except WeReadError as exc:
+                if exc.kind not in {"rate_limited", "network", "upstream"} or attempt >= len(self._ARTICLE_RETRY_DELAYS):
+                    raise
+                retry_reason = exc.kind
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                if attempt >= len(self._ARTICLE_RETRY_DELAYS):
+                    raise WeReadError("Could not reach WeRead while loading an article.", "network") from exc
+                retry_reason = "network"
+            delay = self._ARTICLE_RETRY_DELAYS[attempt]
+            LOGGER.warning(
+                "weread_article_retry book_id=%s article_id=%s attempt=%d reason=%s delay_s=%.1f",
+                book_id,
+                original_id,
+                attempt + 1,
+                retry_reason,
+                delay,
+            )
+            self._sleep(delay)
+        raise WeReadError("Could not load the article after retries.", "upstream")
 
     @staticmethod
     def _headers(cookie: str) -> dict[str, str]:

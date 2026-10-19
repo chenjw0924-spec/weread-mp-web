@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 from pathlib import Path
 import time
@@ -72,6 +73,25 @@ def test_article_failure_does_not_discard_success_and_progress_is_monotonic(tmp_
     assert progress == [0, 50, 100]
     with zipfile.ZipFile(result.zip_path) as archive:
         assert archive.namelist() == ["成功.md"]
+
+
+def test_archive_logs_stage_and_safe_article_context(caplog, tmp_path):
+    article = listed("bad", "包含隐私的标题")
+    service = ArchiveService(temp_dir=tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="weread.archive"):
+        result = service.archive(
+            [article],
+            lambda _item: (_ for _ in ()).throw(RuntimeError("上游错误")),
+            include_images=False,
+            job_id="job-123",
+        )
+
+    assert result.failures == [("bad", "上游错误")]
+    assert "archive_article_failed" in caplog.text
+    assert "stage=fetch" in caplog.text
+    assert "job_id=job-123" in caplog.text
+    assert "包含隐私的标题" not in caplog.text
 
 
 def make_settings():

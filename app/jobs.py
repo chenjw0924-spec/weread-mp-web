@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import logging
 import threading
 import time
 import uuid
@@ -9,6 +10,9 @@ from typing import Callable
 from .archive import ArchiveResult, ArchiveService
 from .auth import Session
 from .weread import ListedArticle
+
+
+LOGGER = logging.getLogger("weread.jobs")
 
 
 @dataclass
@@ -63,6 +67,12 @@ class JobRegistry:
             job.items = [{"article_id": item.original_id, "title": item.title, "status": "queued", "reason": ""} for item in selected]
             session.jobs[job.job_id] = job
         self.executor.submit(self._run, session, job, selected, book_id, callback)
+        LOGGER.info(
+            "archive_job_queued job_id=%s total=%d include_images=%s",
+            job.job_id,
+            job.total,
+            job.include_images,
+        )
         return job
 
     def get(self, session: Session, job_id: str) -> ArchiveJob | None:
@@ -101,6 +111,8 @@ class JobRegistry:
     def _run(self, session: Session, job: ArchiveJob, articles: list[ListedArticle], book_id: str, fetch_article: Callable[[ListedArticle], str]) -> None:
         with self._lock:
             job.status = "running"
+        started_at = time.monotonic()
+        LOGGER.info("archive_job_started job_id=%s total=%d", job.job_id, job.total)
         def update(value: int) -> None:
             with self._lock:
                 job.progress = value
@@ -121,8 +133,16 @@ class JobRegistry:
                         with self._lock:
                             job.connection_expired = True
                     raise
-            result: ArchiveResult = self.archive_service.archive(articles, fetch_with_status, job.include_images, update, book_id, item_callback=update_item)
-        except Exception:
+            result: ArchiveResult = self.archive_service.archive(
+                articles,
+                fetch_with_status,
+                job.include_images,
+                update,
+                book_id,
+                item_callback=update_item,
+                job_id=job.job_id,
+            )
+        except Exception as exc:
             # Packaging failures must also terminate polling and leave a retryable task.
             with self._lock:
                 job.status = "failed"
@@ -131,6 +151,12 @@ class JobRegistry:
                     item.update(status="failed", reason="无法生成下载文件，请重试")
                 job.completed = 0
                 job.processed = job.total
+            LOGGER.exception(
+                "archive_job_failed job_id=%s stage=package error_type=%s elapsed_ms=%d",
+                job.job_id,
+                getattr(exc, "kind", None) or exc.__class__.__name__,
+                round((time.monotonic() - started_at) * 1000),
+            )
             return
         with self._lock:
             job.status = "completed" if not result.failures else "failed"
@@ -139,3 +165,12 @@ class JobRegistry:
             job.failures = result.failures
             job.warnings = result.warnings
             job.zip_path = str(result.zip_path)
+        LOGGER.info(
+            "archive_job_finished job_id=%s status=%s completed=%d failed=%d warnings=%d elapsed_ms=%d",
+            job.job_id,
+            job.status,
+            job.completed,
+            len(job.failures),
+            len(job.warnings),
+            round((time.monotonic() - started_at) * 1000),
+        )

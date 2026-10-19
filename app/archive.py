@@ -1,8 +1,11 @@
 from dataclasses import dataclass, field
+import hashlib
+import logging
 import mimetypes
 from pathlib import Path
 import re
 import tempfile
+import time
 from typing import Callable
 from urllib.parse import urlsplit
 import urllib.error
@@ -13,6 +16,9 @@ import zipfile
 from .config import Settings
 from .content import clean_media_url, parse_article_html, render_markdown
 from .weread import ListedArticle
+
+
+LOGGER = logging.getLogger("weread.archive")
 
 
 @dataclass
@@ -55,6 +61,7 @@ class ArchiveService:
         progress_callback: Callable[[int], None] | None = None,
         book_id: str = "",
         item_callback: Callable[[str, str, str], None] | None = None,
+        job_id: str = "",
     ) -> ArchiveResult:
         total = len(articles)
         progress = progress_callback or (lambda value: None)
@@ -65,11 +72,43 @@ class ArchiveService:
         used_names: set[str] = set()
 
         for index, listed in enumerate(articles):
+            started_at = time.monotonic()
+            title_hash = hashlib.sha256(listed.title.encode("utf-8", "replace")).hexdigest()[:12]
+            LOGGER.info(
+                "archive_article_start job_id=%s article_id=%s title_hash=%s index=%d total=%d",
+                job_id or "-",
+                listed.original_id,
+                title_hash,
+                index + 1,
+                total,
+            )
             if item_callback:
                 item_callback(listed.original_id, "running", "")
             try:
-                html = fetch_article(listed)
-                parsed = parse_article_html(html, listed, book_id=book_id)
+                try:
+                    html = fetch_article(listed)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "archive_article_failed job_id=%s article_id=%s title_hash=%s stage=fetch error_type=%s elapsed_ms=%d",
+                        job_id or "-",
+                        listed.original_id,
+                        title_hash,
+                        _error_type(exc),
+                        round((time.monotonic() - started_at) * 1000),
+                    )
+                    raise
+                try:
+                    parsed = parse_article_html(html, listed, book_id=book_id)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "archive_article_failed job_id=%s article_id=%s title_hash=%s stage=parse error_type=%s elapsed_ms=%d",
+                        job_id or "-",
+                        listed.original_id,
+                        title_hash,
+                        _error_type(exc),
+                        round((time.monotonic() - started_at) * 1000),
+                    )
+                    raise
                 local_images: dict[str, str] = {}
                 image_entries: list[tuple[str, bytes]] = []
                 image_failures = 0
@@ -93,6 +132,13 @@ class ArchiveService:
                             image_failures += 1
                 if image_failures:
                     warnings.append((listed.original_id, f"图片下载失败 {image_failures} 个"))
+                    LOGGER.warning(
+                        "archive_article_warning job_id=%s article_id=%s title_hash=%s stage=image failed_count=%d",
+                        job_id or "-",
+                        listed.original_id,
+                        title_hash,
+                        image_failures,
+                    )
                 markdown = render_markdown(parsed, local_images).encode("utf-8")
                 markdown_name = _unique_name(f"{_safe_filename(parsed.title, index)}.md", used_names)
                 used_names.add(markdown_name)
@@ -100,10 +146,18 @@ class ArchiveService:
                 entries.extend(image_entries)
                 if item_callback:
                     item_callback(listed.original_id, "completed", "")
+                LOGGER.info(
+                    "archive_article_completed job_id=%s article_id=%s title_hash=%s elapsed_ms=%d",
+                    job_id or "-",
+                    listed.original_id,
+                    title_hash,
+                    round((time.monotonic() - started_at) * 1000),
+                )
             except Exception as exc:
-                failures.append((listed.original_id, _safe_error(exc)))
+                reason = _safe_error(exc)
+                failures.append((listed.original_id, reason))
                 if item_callback:
-                    item_callback(listed.original_id, "failed", _safe_error(exc))
+                    item_callback(listed.original_id, "failed", reason)
             progress(round((index + 1) * 100 / total) if total else 100)
 
         zip_path = self.temp_dir / f"archive-{uuid.uuid4().hex}.zip"
@@ -141,4 +195,10 @@ def _extension(url: str) -> str:
 
 def _safe_error(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
+    message = re.sub(r"(?i)(wr_skey|wr_vid|cookie)=[^;\s]+", r"\1=[redacted]", message)
     return message[:300]
+
+
+def _error_type(exc: Exception) -> str:
+    kind = getattr(exc, "kind", "")
+    return str(kind or exc.__class__.__name__)[:80]

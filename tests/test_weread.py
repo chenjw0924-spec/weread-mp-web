@@ -1,5 +1,7 @@
+import io
 import json
 from datetime import datetime, timezone
+import urllib.error
 
 import pytest
 
@@ -76,6 +78,41 @@ def test_cookie_validation_requires_we_read_credentials_and_a_valid_shelf():
     with pytest.raises(WeReadError, match="wr_skey"):
         client.validate_cookie("other=value")
     assert client.validate_cookie("wr_skey=s; wr_vid=v") == []
+
+
+def test_article_content_retries_transient_rate_limit_before_returning_html():
+    calls = []
+    sleeps = []
+
+    class HtmlResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, _limit=-1):
+            return b'<div id="js_content"><p>body</p></div>'
+
+    def urlopen(request, timeout=30):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(request.full_url, 429, "limited", {}, io.BytesIO())
+        return HtmlResponse()
+
+    client = WeReadClient(
+        settings=Settings(app_password="test-password-long"),
+        urlopen=urlopen,
+        sleep=sleeps.append,
+    )
+
+    html = client.get_article_html("wr_skey=s; wr_vid=v", "MP_WXS_42", "article-1")
+
+    assert "js_content" in html
+    assert len(calls) == 2
+    assert sleeps == [1.0]
 
 
 def test_article_response_expands_groups_deduplicates_and_reports_actual_dates():

@@ -359,7 +359,11 @@
     for (const item of job.items || []) {
       const row = document.createElement('li'); row.className = `job-item ${item.status}`;
       const copy = document.createElement('span'); copy.className = 'item-copy'; copy.textContent = item.title;
-      if (item.status === 'failed') { const reason = document.createElement('small'); reason.textContent = '暂时无法读取这篇文章，请重试。'; copy.append(reason); }
+      if (item.status === 'failed') {
+        const reason = document.createElement('small');
+        reason.textContent = item.reason || '暂时无法读取这篇文章，请重试。';
+        copy.append(reason);
+      }
       const status = document.createElement('span'); status.className = 'item-status'; status.textContent = { queued:'等待中', running:'导出中', completed:'已完成', failed:'未成功' }[item.status] || '等待中';
       row.append(copy,status); list.append(row);
     }
