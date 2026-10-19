@@ -76,10 +76,10 @@
 - `render_markdown(article, local_images: Mapping[str, str]) -> str` emits JSON-quoted YAML scalars in YAML Front Matter, Markdown body, and local images where downloads succeeded; failed image downloads retain absolute remote image references.
 - `parse_picture_pages(html) -> list[ImageRef]` handles the upstream JavaScript image-list shape without executing remote script data.
 
-- [ ] Write tests first for nested divs, text-message escaped `content_noencode`, HTML entity titles, `chksm` removal, inline images, image-message URLs, failed-image fallback, and YAML-special characters.
-- [ ] Run `pytest tests/test_content.py -q`; confirm parser/renderer tests fail before implementation.
-- [ ] Implement parsing with BeautifulSoup plus a safe non-executing JavaScript string/list parser; reject truncated or empty article content with actionable errors.
-- [ ] Re-run tests and parse generated front matter with a YAML parser in tests to ensure title/account values round-trip.
+- [x] Write tests first for nested divs, text-message escaped `content_noencode`, HTML entity titles, `chksm` removal, inline images, image-message URLs, failed-image fallback, and YAML-special characters.
+- [x] Run `pytest tests/test_content.py -q`; confirm parser/renderer tests fail before implementation.
+- [x] Implement parsing with BeautifulSoup plus a safe non-executing JavaScript string/list parser; reject truncated or empty article content with actionable errors.
+- [x] Re-run tests and parse generated front matter with a YAML parser in tests to ensure title/account values round-trip.
 
 ## Task 4: Archive jobs, ZIP files, and retries
 
@@ -91,10 +91,10 @@
 - `JobRegistry.get(session, job_id) -> ArchiveJobSnapshot`; `retry_failed(session, job_id) -> ArchiveJob` queues only failed article IDs.
 - `ArchiveResult.zip_path` is temporary, cleaned on download and on expiry; jobs and ZIPs have explicit count/size/TTL bounds.
 
-- [ ] Write tests for ZIP contents, image option, image fallback, an article fetch failure beside successful articles, monotonic progress, retrying only failures, cross-session job access denial, and artifact expiry.
-- [ ] Run `pytest tests/test_archive.py -q`; verify failures before archive implementation.
-- [ ] Implement bounded sequential jobs, media-origin validation, byte caps, progress updates, private temporary storage, and cleanup.
-- [ ] Re-run archive tests and inspect ZIP entries to confirm no Cookie, session token, or credential data is present.
+- [x] Write tests for ZIP contents, image option, image fallback, an article fetch failure beside successful articles, monotonic progress, retrying only failures, cross-session job access denial, and artifact expiry.
+- [x] Run `pytest tests/test_archive.py -q`; verify failures before archive implementation.
+- [x] Implement bounded sequential jobs, media-origin validation, byte caps, progress updates, private temporary storage, and cleanup.
+- [x] Re-run archive tests and inspect ZIP entries to confirm no Cookie, session token, or credential data is present.
 
 ## Task 5: FastAPI routes and native operator UI
 
@@ -105,24 +105,24 @@
 - Auth cookie is HttpOnly, SameSite=Strict, configured Secure, has Max-Age and no Domain attribute. All API mutations are same-origin JSON and return no-store headers.
 - Frontend includes password lock screen; Cookie form, connect/disconnect state; account picker; actual date-range and source-status display; title/summary search; date inputs; select-visible/select-all; include-images toggle; job progress; failures and retry.
 
-- [ ] Write API tests for public/private access, login/logout, connection state without cookie echo, list errors, list filtering, job ownership, and download cleanup.
-- [ ] Run `pytest tests/test_api.py -q`; confirm protected-route and route failures before adding routes.
-- [ ] Implement routes with request-size bounds, safe errors, per-session state, and static asset serving.
-- [ ] Write frontend tests for connect/disconnect, account load, search/date filtering, selection, job progress, empty/captcha/expired/error states, and retry.
-- [ ] Run `pytest tests/test_frontend.py -q`; verify UI tests fail before frontend implementation.
-- [ ] Implement accessible responsive native UI with semantic form controls and live status regions; keep credentials in the password field only until successful submit and clear the field afterward.
-- [ ] Run all API/frontend tests and check keyboard access and layout at 375, 768, and 1440 pixels.
+- [x] Write API tests for public/private access, login/logout, connection state without cookie echo, list errors, list filtering, job ownership, and download cleanup.
+- [x] Run `pytest tests/test_api.py -q`; confirm protected-route and route failures before adding routes.
+- [x] Implement routes with request-size bounds, safe errors, per-session state, and static asset serving.
+- [x] Write frontend tests for connect/disconnect, account load, search/date filtering, selection, job progress, empty/captcha/expired/error states, and retry.
+- [x] Run `pytest tests/test_frontend.py -q`; verify UI tests fail before frontend implementation.
+- [x] Implement accessible responsive native UI with semantic form controls and live status regions; keep credentials in the password field only until successful submit and clear the field afterward.
+- [x] Run all API/frontend tests and check keyboard access and layout at 375, 768, and 1440 pixels.
 
 ## Task 6: Docker deployment, documentation, and local launch
 
 **Files:** create Docker and compose files, requirements files, ignore files, README, and `tests/test_deployment.py`.
 
-- [ ] Write deployment checks for required APP_PASSWORD, one worker, localhost-only port binding by default, Secure-cookie option, and no persistent cookie/data volume.
-- [ ] Run `pytest tests/test_deployment.py -q`; verify expected configuration checks fail before deployment artifacts exist.
-- [ ] Add a non-root Python 3.10 slim image with health check, pinned production dependencies, and a single Uvicorn worker; Compose binds `127.0.0.1:8765:8000` and requires an externally supplied APP_PASSWORD.
-- [ ] Document Docker build/up/down, local-only `COOKIE_SECURE=false`, HTTPS reverse proxy requirements, manual Cookie acquisition from the user's own WeRead session, process-memory lifecycle, no captcha bypass, and WeRead history limits.
-- [ ] Run complete tests, build the container, start the service with a throwaway local test password, smoke-test `/healthz`, login protection, and static UI, then stop the test container.
-- [ ] Start the final local deployment with a randomly generated one-run password held only in process configuration, give the user its URL and password, and do not claim public internet deployment without a supplied host/proxy target.
+- [x] Write deployment checks for required APP_PASSWORD, one worker, localhost-only port binding by default, Secure-cookie option, and no persistent cookie/data volume.
+- [x] Run `pytest tests/test_deployment.py -q`; verify expected configuration checks fail before deployment artifacts exist.
+- [x] Add a non-root Python 3.10 slim image with health check, pinned production dependencies, and a single Uvicorn worker; Compose binds `127.0.0.1:8765:8000` and requires an externally supplied APP_PASSWORD.
+- [x] Document Docker build/up/down, local-only `COOKIE_SECURE=false`, HTTPS reverse proxy requirements, manual Cookie acquisition from the user's own WeRead session, process-memory lifecycle, no captcha bypass, and WeRead history limits.
+- [x] Run complete tests, build the container, start the service with a throwaway local test password, smoke-test `/healthz`, login protection, and static UI, then stop the test container.
+- [x] Start the final local deployment with a randomly generated one-run password held only in process configuration, give the user its URL and password, and do not claim public internet deployment without a supplied host/proxy target.
 
 ## Plan self-review
 
