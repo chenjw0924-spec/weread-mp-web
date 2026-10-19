@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import date
+import base64
 import logging
 import os
 import time
@@ -201,7 +202,7 @@ def create_app(
         if session.qr_login and session.qr_login_id:
             current = session.qr_login.status()
             if current["state"] in {"waiting", "scanned", "otp_required"}:
-                return _qr_payload(session.qr_login_id, current)
+                return _qr_payload(session.qr_login_id, current, session.qr_login.image())
 
         import secrets
 
@@ -243,7 +244,7 @@ def create_app(
             "qr_start_ready elapsed_ms=%d",
             round((time.monotonic() - started_at) * 1000),
         )
-        return _qr_payload(login_id, status)
+        return _qr_payload(login_id, status, login.image())
 
     @app.get("/api/weread/qr/{login_id}/status")
     def qr_status(login_id: str, request: Request) -> dict[str, Any]:
@@ -415,13 +416,19 @@ def _session_qr(session: Session, login_id: str) -> Any:
     return session.qr_login
 
 
-def _qr_payload(login_id: str, status: dict[str, Any]) -> dict[str, Any]:
+def _qr_payload(login_id: str, status: dict[str, Any], image: bytes | None = None) -> dict[str, Any]:
+    image_data = (
+        "data:image/svg+xml;base64," + base64.b64encode(image).decode("ascii")
+        if isinstance(image, bytes) and image
+        else None
+    )
     return {
         "login_id": login_id,
         "state": status["state"],
         "message": status.get("message", ""),
         "expires_at": status.get("expires_at"),
         "image_url": f"/api/weread/qr/{login_id}/image",
+        "image_data": image_data,
         "status_url": f"/api/weread/qr/{login_id}/status",
     }
 

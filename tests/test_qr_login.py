@@ -133,6 +133,7 @@ def test_qr_api_is_session_scoped_and_connects_after_success():
     payload = started.json()
     assert payload["state"] == "waiting"
     assert payload["image_url"].startswith("/api/weread/qr/")
+    assert payload["image_data"].startswith("data:image/svg+xml;base64,")
     assert "secret-access-token" not in started.text
 
     image = first.get(payload["image_url"])

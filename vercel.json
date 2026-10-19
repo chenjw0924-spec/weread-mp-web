@@ -10,6 +10,12 @@
       }
     }
   ],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 10,
+      "regions": ["sin1"]
+    }
+  },
   "routes": [
     {
       "src": "/(.*)",
