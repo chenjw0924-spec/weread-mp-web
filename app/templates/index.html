@@ -6,7 +6,7 @@
   <meta name="description" content="连接微信读书，选择已关注公众号的文章，批量归档为本地 Markdown 和 ZIP。">
   <title>微信读书文章归档</title>
   <link rel="icon" href="/static/icon-journal-text.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/app.css?v=20261019-otp">
+  <link rel="stylesheet" href="/static/app.css?v=20261019-guide">
 </head>
 <body>
 <header class="site-header">
@@ -39,6 +39,22 @@
           <p id="connect-message" class="message" role="status" aria-live="polite"></p>
         </details>
       </div>
+      <details id="operation-guide" class="operation-guide">
+        <summary><span class="guide-summary"><img class="icon" src="/static/icon-file-earmark-text.svg" alt=""><strong>操作指引</strong></span><span class="guide-summary-note">扫码、读取、导出</span></summary>
+        <div class="guide-body">
+          <ol class="guide-steps">
+            <li><b>使用微信 App 扫码</b><span>点击“扫码连接”，使用手机微信的“扫一扫”扫描二维码，并在手机上确认登录微信读书。</span></li>
+            <li><b>输入 4 位验证码</b><span>手机确认后如果出现双重验证，网页会显示输入框；填写手机显示的 4 位数字并提交。</span></li>
+            <li><b>选择公众号</b><span>连接成功后，从左侧已关注公众号中选择一个，首次读取默认查询最近 1 年的文章。</span></li>
+            <li><b>导出 Markdown ZIP</b><span>勾选文章，点击“下载文章”，可选下载图片，任务完成后下载 ZIP 文件。</span></li>
+          </ol>
+          <div class="guide-faq">
+            <b>常见问题</b>
+            <p><strong>二维码过期：</strong>点击“重新生成二维码”，不要继续使用旧二维码。</p>
+            <p><strong>历史文章较少：</strong>调整开始、结束日期后点击“按日期读取”；结果受微信读书实际返回内容限制。</p>
+          </div>
+        </div>
+      </details>
     </section>
     <section id="scan-panel" class="shell scan-wrap" hidden aria-labelledby="scan-title">
       <div class="card scan-card">

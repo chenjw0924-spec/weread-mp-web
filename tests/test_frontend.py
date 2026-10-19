@@ -44,6 +44,19 @@ def test_scan_status_is_visible_on_the_initial_connection_page():
     assert not any(ancestor.has_attr('hidden') for ancestor in status.parents)
 
 
+def test_homepage_includes_collapsed_operation_guide():
+    page = BeautifulSoup((ROOT / "app/templates/index.html").read_text(), "html.parser")
+    guide = page.select_one("#operation-guide")
+
+    assert guide is not None
+    assert guide.name == "details"
+    assert not guide.has_attr("open")
+    assert guide.select_one("summary strong").get_text(" ", strip=True) == "操作指引"
+    guide_text = guide.get_text(" ", strip=True)
+    for text in ("使用微信 App 扫码", "输入 4 位验证码", "选择公众号", "导出 Markdown ZIP"):
+        assert text in guide_text
+
+
 def test_scan_events_show_loading_otp_and_verified_success():
     result = subprocess.run(['node', '--test', 'tests/login-ui.cjs', 'tests/archive-ui.cjs'], cwd=ROOT, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr
