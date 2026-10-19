@@ -5,6 +5,8 @@ import re
 import tempfile
 from typing import Callable
 from urllib.parse import urlsplit
+import urllib.error
+import urllib.request
 import uuid
 import zipfile
 
@@ -32,7 +34,18 @@ class ArchiveService:
         self.settings = settings or Settings(app_password="archive-default-password")
         self.temp_dir = Path(temp_dir) if temp_dir else Path(tempfile.gettempdir()) / "weread-mp-web"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.image_fetcher = image_fetcher
+        self.image_fetcher = image_fetcher or self._fetch_image
+
+    def _fetch_image(self, url: str) -> bytes:
+        request = urllib.request.Request(url, headers={"User-Agent": "WeRead-MP-Web/1.0", "Accept": "image/*"})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = response.read(self.settings.max_image_bytes + 1)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError("图片网络请求失败") from exc
+        if len(payload) > self.settings.max_image_bytes:
+            raise RuntimeError("图片超过大小限制")
+        return payload
 
     def archive(
         self,
