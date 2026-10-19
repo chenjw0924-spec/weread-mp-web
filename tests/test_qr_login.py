@@ -1,5 +1,4 @@
 import time
-import threading
 
 from fastapi.testclient import TestClient
 
@@ -67,6 +66,18 @@ class OtpLoginClient:
         return "wr_vid=456; wr_skey=secret-access-token"
 
 
+class RequestDrivenLoginClient(FakeLoginClient):
+    def __init__(self):
+        super().__init__()
+        self.allow_poll = False
+
+    def get_login_info(self, uid):
+        if not self.allow_poll:
+            raise AssertionError("QR polling must happen in the status request")
+        self.info_calls += 1
+        return {"data": {"vid": "123", "skey": "temporary-skey", "code": "login-code", "pf": 2}}
+
+
 def settings():
     return Settings(app_password="test-password-long", cookie_secure=False)
 
@@ -86,6 +97,7 @@ def wait_for_state(client, login_id, expected):
 
 def wait_for_qr_state(login, expected):
     for _ in range(100):
+        login.poll()
         status = login.status()
         if status["state"] == expected:
             return status
@@ -137,6 +149,31 @@ def test_qr_api_is_session_scoped_and_connects_after_success():
     assert "secret-access-token" not in completed.text
 
 
+def test_qr_status_request_drives_upstream_poll_without_background_thread():
+    clients = []
+
+    def factory():
+        client = RequestDrivenLoginClient()
+        clients.append(client)
+        return client
+
+    app = create_app(
+        settings=settings(),
+        weread_client=FakeWeRead(),
+        qr_client_factory=factory,
+    )
+    client = TestClient(app)
+    login(client)
+    started = client.post("/api/weread/qr/start").json()
+    assert clients[0].info_calls == 0
+
+    clients[0].allow_poll = True
+    completed = client.get(f"/api/weread/qr/{started['login_id']}/status")
+
+    assert completed.status_code == 200
+    assert completed.json()["state"] == "success"
+
+
 def test_qr_api_rejects_unknown_or_expired_login_without_leaking_state():
     app = create_app(settings=settings(), weread_client=FakeWeRead(), qr_client_factory=FakeLoginClient)
     client = TestClient(app)
@@ -179,7 +216,7 @@ def test_qr_login_accepts_numeric_vid_from_we_read_login_response():
     assert login.start()["state"] == "waiting"
     status = wait_for_qr_state(login, "otp_required")
     assert "4 位验证码" in status["message"]
-    assert login.submit_otp("1234")["state"] == "scanned"
+    assert login.submit_otp("1234")["state"] == "success"
     assert wait_for_qr_state(login, "success")["state"] == "success"
     assert client.web_login_calls[1]["otp"] == "1234"
     assert client.web_login_calls[1]["pf"] == 2
@@ -207,7 +244,7 @@ def test_qr_login_keeps_otp_form_available_after_wrong_code():
     login.submit_otp("9876")
     status = wait_for_qr_state(login, "otp_required")
     assert "验证码错误" in status["message"]
-    assert login.submit_otp("1234")["state"] == "scanned"
+    assert login.submit_otp("1234")["state"] == "success"
     assert wait_for_qr_state(login, "success")["state"] == "success"
 
 
@@ -219,33 +256,6 @@ def test_qr_login_expires_while_waiting_for_otp():
     status = login.status()
     assert status["state"] == "expired"
     assert "二维码已过期" in status["message"]
-
-
-def test_qr_login_queues_otp_entered_while_upstream_challenge_is_pending():
-    entered_login = threading.Event()
-    release_login = threading.Event()
-
-    class DelayedOtpClient(OtpLoginClient):
-        def web_login(self, data):
-            self.web_login_calls.append(dict(data))
-            if "otp" not in data:
-                entered_login.set()
-                assert release_login.wait(2)
-                return {"data": {"needRemoteLoginVerify": True}}
-            return {"data": {"vid": "456", "accessToken": "secret-access-token", "succeed": True}}
-
-    client = DelayedOtpClient()
-    login = QRLogin(lambda _: None, client_factory=lambda: client, ttl_seconds=30)
-    login.start()
-    assert entered_login.wait(1)
-    assert login.status()["state"] == "scanned"
-    assert login.submit_otp("1234")["state"] == "scanned"
-    release_login.set()
-
-    result = wait_for_qr_state(login, "success")
-    assert result["state"] == "success"
-    assert len(client.web_login_calls) == 2
-    assert client.web_login_calls[1]["otp"] == "1234"
 
 
 def test_qr_login_rejects_otp_before_qr_was_scanned():

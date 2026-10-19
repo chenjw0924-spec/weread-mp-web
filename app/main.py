@@ -185,6 +185,7 @@ def create_app(
     def qr_status(login_id: str, request: Request) -> dict[str, Any]:
         session = session_for(request)
         login = _session_qr(session, login_id)
+        login.poll()
         status = login.status()
         result = {"login_id": login_id, **status, "connected": status["state"] == "success"}
         if status["state"] == "success":

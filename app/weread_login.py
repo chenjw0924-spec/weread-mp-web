@@ -112,7 +112,10 @@ class LoginClient:
         return value
 
     def get_login_info(self, uid: str) -> dict[str, Any]:
-        return self.request("/web/login/getinfo", {"uid": uid}, timeout=65)
+        # Keep one status request below Vercel Hobby's function timeout. The
+        # browser calls this endpoint again when the upstream long poll times
+        # out without a login result.
+        return self.request("/web/login/getinfo", {"uid": uid}, timeout=8)
 
     def web_login(self, data: dict[str, Any]) -> dict[str, Any]:
         uid = data.get("uid")
@@ -130,7 +133,7 @@ class LoginClient:
         }
         if data.get("otp"):
             values["otp"] = data["otp"]
-        return self.request("/web/login/weblogin", values, timeout=30)
+        return self.request("/web/login/weblogin", values, timeout=8)
 
     @staticmethod
     def _fingerprint() -> str:
@@ -160,7 +163,13 @@ class LoginClient:
 
 
 class QRLogin:
-    """One expiring QR login bound to one application session."""
+    """One expiring QR login advanced by the HTTP status request.
+
+    Vercel can freeze a function as soon as a response is returned, so a
+    background thread started by ``/qr/start`` cannot own the login state.
+    Keeping the upstream poll inside ``/qr/{id}/status`` makes the flow work
+    for both a single Uvicorn worker and a serverless function.
+    """
 
     TERMINAL_STATES = {"success", "expired", "failed", "cancelled"}
 
@@ -183,8 +192,9 @@ class QRLogin:
         self.expires_at = 0.0
         self._pending_login: dict[str, Any] | None = None
         self._pending_otp: str | None = None
-        self._thread: threading.Thread | None = None
-        self._otp_thread: threading.Thread | None = None
+        self._client: LoginClient | Any | None = None
+        self._uid: str | None = None
+        self._polling = False
 
     def status(self) -> dict[str, Any]:
         with self.lock:
@@ -228,16 +238,10 @@ class QRLogin:
             self.expires_at = time.time() + self.ttl_seconds
             self._pending_login = None
             self._pending_otp = None
+            self._client = client
+            self._uid = uid
             self.generation += 1
-            generation = self.generation
             self.done.clear()
-            self._thread = threading.Thread(
-                target=self._listen,
-                args=(client, uid, generation),
-                daemon=True,
-                name="weread-qr-login",
-            )
-            self._thread.start()
             return self.status()
 
     def cancel(self) -> None:
@@ -250,6 +254,8 @@ class QRLogin:
             self.svg = b""
             self._pending_login = None
             self._pending_otp = None
+            self._client = None
+            self._uid = None
             self.done.set()
 
     def submit_otp(self, value: str) -> dict[str, Any]:
@@ -266,83 +272,85 @@ class QRLogin:
                 raise LoginProtocolError("otp_expired")
             if self.state not in {"scanned", "otp_required"}:
                 raise LoginProtocolError("otp_not_required")
-            if self.state == "otp_required" and self._pending_login:
-                return self._start_otp_verification_locked(value)
+            if self.state == "scanned" and not self._pending_login:
+                self._pending_otp = value
+                return self.status()
+            if not self._pending_login or not self._client:
+                raise LoginProtocolError("otp_not_required")
+            generation = self.generation
+            client = self._client
+            pending = dict(self._pending_login)
             self._pending_otp = value
-            return self.status()
-
-    def _start_otp_verification_locked(self, value: str) -> dict[str, Any]:
-        if not self._pending_login or not self._thread:
-            raise LoginProtocolError("otp_not_required")
-        if self._otp_thread and self._otp_thread.is_alive():
-            raise LoginProtocolError("otp_verification_pending")
-        self._pending_otp = value
-        generation = self.generation
-        client = self._client
-        pending = dict(self._pending_login)
-        self.state = "scanned"
-        self.message = "正在验证手机验证码，请稍候。"
-        self._otp_thread = threading.Thread(
-            target=self._verify_otp,
-            args=(client, pending, value, generation),
-            daemon=True,
-            name="weread-qr-otp",
-        )
-        self._otp_thread.start()
+            self.state = "scanned"
+            self.message = "正在验证手机验证码，请稍候。"
+        self._verify_otp(client, pending, value, generation)
         return self.status()
 
     def wait_for_terminal(self, timeout: float | None = None) -> dict[str, Any]:
-        self.done.wait(timeout)
-        return self.status()
-
-    def _listen(self, client: LoginClient, uid: str, generation: int) -> None:
-        with self.lock:
-            self._client = client
+        deadline = None if timeout is None else time.monotonic() + timeout
         while True:
+            current = self.status()
+            if current["state"] in self.TERMINAL_STATES:
+                return current
+            if deadline is not None and time.monotonic() >= deadline:
+                return current
+            self.poll()
+            time.sleep(0.01)
+
+    def poll(self) -> dict[str, Any]:
+        """Advance one upstream login poll and return the coarse status."""
+        with self.lock:
+            if self.state != "waiting" or self._polling or not self._client or not self._uid:
+                return self.status()
+            if time.time() >= self.expires_at:
+                self._expire_locked()
+                return self.status()
+            client = self._client
+            uid = self._uid
+            generation = self.generation
+            self._polling = True
+        try:
+            try:
+                response = client.get_login_info(uid)
+            except (LoginWaitTimeout, TimeoutError):
+                return self.status()
+            except Exception:
+                self._fail(generation, "暂时无法连接微信读书，请稍后重试。")
+                return self.status()
+            self._handle_login_response(client, uid, response, generation)
+            return self.status()
+        finally:
+            with self.lock:
+                self._polling = False
+
+    def _handle_login_response(self, client: LoginClient, uid: str, response: dict[str, Any], generation: int) -> None:
+        data = _nested_data(response)
+        if data.get("vid") and data.get("skey") and data.get("code"):
             with self.lock:
                 if generation != self.generation:
                     return
-                if time.time() >= self.expires_at:
-                    self._expire_locked()
-                    return
+                self.state = "scanned"
+                self.message = "已扫码，正在等待微信读书确认。"
+            data = {**data, "uid": uid, "pf": data.get("pf", 2)}
             try:
-                response = client.get_login_info(uid)
-            except LoginWaitTimeout:
-                continue
-            except TimeoutError:
-                continue
-            except Exception:
-                self._fail(generation, "暂时无法连接微信读书，请稍后重试。")
-                return
-
-            data = _nested_data(response)
-            if data.get("vid") and data.get("skey") and data.get("code"):
-                with self.lock:
-                    if generation != self.generation:
-                        return
-                    self.state = "scanned"
-                    self.message = "已扫码，正在等待微信读书确认。"
-                data = {**data, "uid": uid, "pf": data.get("pf", 2)}
-                try:
-                    result = client.web_login(data)
-                    if _login_flag(result, "needRemoteLoginVerify"):
-                        self._require_otp(data, generation)
-                        return
-                    if _login_flag(result, "verifyCodeExpired"):
-                        self._expire(generation)
-                        return
-                    self._complete_login(client, result, generation)
-                except Exception:
-                    self._fail(generation, "微信读书登录未完成，请在手机上确认后重试。")
+                result = client.web_login(data)
+                if _login_flag(result, "needRemoteLoginVerify"):
+                    self._require_otp(data, generation)
                     return
-                return
-            if data.get("needRemoteLoginVerify"):
-                self._require_otp({**data, "uid": uid}, generation)
-                return
-            if response.get("errCode") not in (None, 0, "0", ""):
-                self._fail(generation, "微信读书未确认登录，请重新扫码。")
-                return
-            time.sleep(0.2)
+                if _login_flag(result, "verifyCodeExpired"):
+                    self._expire(generation)
+                    return
+                self._complete_login(client, result, generation)
+            except LoginWaitTimeout:
+                self._fail(generation, "微信读书登录验证超时，请重新扫码。")
+            except Exception:
+                self._fail(generation, "微信读书登录未完成，请在手机上确认后重试。")
+            return
+        if data.get("needRemoteLoginVerify"):
+            self._require_otp({**data, "uid": uid}, generation)
+            return
+        if response.get("errCode") not in (None, 0, "0", ""):
+            self._fail(generation, "微信读书未确认登录，请重新扫码。")
 
     def _require_otp(self, data: dict[str, Any], generation: int) -> None:
         pending: dict[str, Any] = {}
@@ -363,11 +371,8 @@ class QRLogin:
             if generation != self.generation:
                 return
             self._pending_login = pending
-            if self._pending_otp:
-                self._start_otp_verification_locked(self._pending_otp)
-            else:
-                self.state = "otp_required"
-                self.message = "请在网页输入手机显示的 4 位验证码。"
+            self.state = "otp_required"
+            self.message = "请在网页输入手机显示的 4 位验证码。"
 
     def _verify_otp(self, client: LoginClient, pending: dict[str, Any], otp: str, generation: int) -> None:
         try:
@@ -380,7 +385,6 @@ class QRLogin:
                     if generation != self.generation:
                         return
                     self._pending_otp = None
-                    self._otp_thread = None
                     self.state = "otp_required"
                     self.message = "验证码错误，请重新输入手机显示的 4 位验证码。"
                 return
@@ -389,7 +393,6 @@ class QRLogin:
                     if generation != self.generation:
                         return
                     self._pending_otp = None
-                    self._otp_thread = None
                     self.state = "otp_required"
                     self.message = "验证码未通过，请重新输入手机显示的 4 位验证码。"
                 return
@@ -411,6 +414,8 @@ class QRLogin:
                 return
             self._pending_login = None
             self._pending_otp = None
+            self._client = None
+            self._uid = None
             self.state = "success"
             self.message = "微信读书已连接。"
             self.done.set()
@@ -421,6 +426,8 @@ class QRLogin:
         self.svg = b""
         self._pending_login = None
         self._pending_otp = None
+        self._client = None
+        self._uid = None
         self.done.set()
 
     def _expire(self, generation: int) -> None:
@@ -438,4 +445,6 @@ class QRLogin:
             self.svg = b""
             self._pending_login = None
             self._pending_otp = None
+            self._client = None
+            self._uid = None
             self.done.set()
