@@ -115,3 +115,26 @@ test('scan login still pauses for the phone OTP and submits four digits', async 
   assert.equal(ui.elements.get('selection-panel').hidden, false);
   assert.equal(ui.elements.get('otp-form').hidden, true);
 });
+
+test('QR start retries a transient upstream failure before showing an error', async () => {
+  let starts = 0;
+  const ui = await setup((url) => {
+    if (url === '/api/weread/qr/start') {
+      starts++;
+      if (starts === 1) return response(503, { detail: { kind: 'qr_unavailable', message: '暂时不可用' } });
+      return response(200, {
+        login_id: 'qr-retry', state: 'waiting', message: '请使用微信扫描二维码。',
+        expires_at: 1890000000, image_url: '/api/weread/qr/qr-retry/image', status_url: '/api/weread/qr/qr-retry/status',
+      });
+    }
+    if (url === '/api/weread/qr/qr-retry/status') return response(200, { login_id: 'qr-retry', state: 'waiting', connected: false });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  const retry = [...ui.timeouts.values()][0];
+  assert.ok(retry);
+  retry();
+  await flush();
+  await flush();
+  assert.equal(starts, 2);
+  assert.match(ui.elements.get('qr-status-text').textContent, /等待|扫码/);
+});

@@ -287,6 +287,15 @@ def test_login_client_reuses_fingerprint_for_otp_retry():
     assert calls[0][1]["fp"] == calls[1][1]["fp"]
 
 
+def test_login_client_keeps_qr_requests_inside_serverless_timeout_window():
+    client = LoginClient(opener=object())
+    calls = []
+    client.request = lambda path, values=None, timeout=20: calls.append((path, timeout)) or {"uid": "uid-for-test"}
+
+    assert client.get_uid() == "uid-for-test"
+    assert calls == [("/web/login/getuid", 6)]
+
+
 def test_qr_otp_api_is_session_scoped_and_does_not_return_tokens():
     clients = []
 

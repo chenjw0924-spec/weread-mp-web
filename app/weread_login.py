@@ -105,7 +105,10 @@ class LoginClient:
         return payload
 
     def get_uid(self) -> str:
-        payload = self.request("/web/login/getuid")
+        # Vercel Hobby functions have a short execution window. Returning a
+        # retryable response is more useful than allowing a 20s upstream wait
+        # to be terminated by the platform before the browser gets JSON.
+        payload = self.request("/web/login/getuid", timeout=6)
         value = _nested_data(payload).get("uid")
         if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,512}", value):
             raise LoginProtocolError("missing_login_uid")
@@ -115,7 +118,7 @@ class LoginClient:
         # Keep one status request below Vercel Hobby's function timeout. The
         # browser calls this endpoint again when the upstream long poll times
         # out without a login result.
-        return self.request("/web/login/getinfo", {"uid": uid}, timeout=8)
+        return self.request("/web/login/getinfo", {"uid": uid}, timeout=6)
 
     def web_login(self, data: dict[str, Any]) -> dict[str, Any]:
         uid = data.get("uid")
@@ -133,7 +136,7 @@ class LoginClient:
         }
         if data.get("otp"):
             values["otp"] = data["otp"]
-        return self.request("/web/login/weblogin", values, timeout=8)
+        return self.request("/web/login/weblogin", values, timeout=6)
 
     @staticmethod
     def _fingerprint() -> str:

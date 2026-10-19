@@ -130,6 +130,28 @@ def test_ads_txt_is_available_at_domain_root(tmp_path):
     assert response.text.strip() == "google.com, pub-6796219903679328, DIRECT, f08c47fec0942fa0"
 
 
+def test_public_policy_support_and_crawler_routes(tmp_path):
+    app = create_app(settings=settings(tmp_path), weread_client=FakeWeRead(), artifact_dir=tmp_path)
+    client = TestClient(app)
+
+    privacy = client.get("/privacy")
+    support = client.get("/support")
+    robots = client.get("/robots.txt")
+    sitemap = client.get("/sitemap.xml")
+
+    assert privacy.status_code == 200
+    assert "Google AdSense" in privacy.text
+    assert "Cookie" in privacy.text
+    assert support.status_code == 200
+    assert "GitHub Issues" in support.text
+    assert robots.status_code == 200
+    assert "Disallow: /api/" in robots.text
+    assert "Sitemap: https://www.weread-export.top/sitemap.xml" in robots.text
+    assert sitemap.status_code == 200
+    assert sitemap.headers["content-type"].startswith("application/xml")
+    assert "https://www.weread-export.top/privacy" in sitemap.text
+
+
 def test_login_page_and_script_require_cache_revalidation(tmp_path):
     app = create_app(settings=settings(tmp_path), weread_client=FakeWeRead(), artifact_dir=tmp_path)
     client = TestClient(app)

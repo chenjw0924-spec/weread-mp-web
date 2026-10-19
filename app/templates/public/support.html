@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="index,follow">
+  <meta name="description" content="WeRead MP Web 使用支持：微信读书扫码、双重验证码、公众号历史文章读取和 Markdown ZIP 导出排障。">
+  <link rel="canonical" href="https://www.weread-export.top/support">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="使用支持｜WeRead MP Web">
+  <meta property="og:description" content="查看扫码登录、历史文章读取、批量导出和图片下载的操作说明。">
+  <meta property="og:url" content="https://www.weread-export.top/support">
+  <title>使用支持｜WeRead MP Web</title>
+  <link rel="icon" href="/static/icon-journal-text.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v=20261019-guide-top">
+  <link rel="stylesheet" href="/static/public.css?v=20261019-ads">
+</head>
+<body class="public-page">
+  <header class="site-header"><div class="shell nav-shell"><a class="brand brand-link" href="/"><span class="logo" aria-hidden="true">文</span><span class="brand-copy"><strong>微信读书文章归档</strong><small>WeRead MP Web</small></span></a><a class="button button-secondary button-small" href="/">返回首页</a></div></header>
+  <main><article class="public-shell">
+    <p class="eyebrow">WeRead MP Web · Support</p>
+    <h1>使用支持</h1>
+    <p class="lede">从微信 App 扫码连接，到筛选公众号文章并导出 Markdown ZIP，下面列出完整步骤和常见排障方法。</p>
+    <section><h2>快速开始</h2><ol><li>打开首页，点击“扫码连接”，使用手机微信 App 的“扫一扫”扫描二维码。</li><li>在手机上确认微信读书登录。如果出现双重验证，在网页输入手机显示的 4 位数字。</li><li>连接成功后选择公众号，首次读取默认查询最近 1 年的文章；也可以填写日期范围重新读取。</li><li>勾选文章，点击“下载文章”，选择是否下载图片，任务完成后下载 ZIP。</li></ol></section>
+    <section><h2>常见问题</h2><h3>扫码后一直等待</h3><p>请确认使用的是微信 App 扫码，并已在手机上完成登录确认。二维码约 3 分钟有效，过期后点击“重新生成二维码”。</p><h3>手机显示验证码但网页没有输入框</h3><p>验证码输入框只会在微信读书确认扫码后出现。请保持当前页面和二维码任务不变，等待状态更新；仍未出现时重新生成二维码并完整扫码。</p><h3>公众号历史文章少于预期</h3><p>先确认公众号已在微信读书中关注，再点击“刷新”。填写开始和结束日期后点击“按日期读取”；结果受微信读书接口实际返回范围限制。</p><h3>导出或图片下载失败</h3><p>导出窗口会显示成功和失败数量。点击“重试失败项”可重试文章；图片下载失败时 Markdown 会保留原始图片链接。</p></section>
+    <section><h2>反馈与源码</h2><div class="public-note"><p>如果问题可以稳定复现，请在 <a href="https://github.com/chenjw0924-spec/weread-mp-web/issues" rel="noopener noreferrer">GitHub Issues</a> 中描述浏览器、操作步骤和页面提示。请不要提交微信 Cookie、验证码或文章正文。</p></div></section>
+    <section><h2>隐私说明</h2><p>本站不要求注册账户。微信读书 Cookie 仅在当前服务进程内存中保存，文章只在当前导出任务中处理。完整说明见 <a href="/privacy">隐私政策</a>。</p></section>
+  </article></main>
+  <footer class="site-footer"><div class="shell site-footer-inner"><span>WeRead MP Web · 微信读书公众号文章本地归档</span><nav aria-label="网站信息"><a href="/support" aria-current="page">使用支持</a><a href="/privacy">隐私政策</a><a href="/">返回首页</a></nav></div></footer>
+</body>
+</html>

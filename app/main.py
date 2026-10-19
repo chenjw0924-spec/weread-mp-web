@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import date
+import logging
 import os
+import time
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
@@ -20,6 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
 TEMPLATES = ROOT / "app" / "templates"
 ADS_TXT = STATIC / "ads.txt"
+PUBLIC_TEMPLATES = TEMPLATES / "public"
+PUBLIC_ORIGIN = "https://www.weread-export.top"
+QR_LOGGER = logging.getLogger("weread.qr")
 
 
 class CookieRequest(BaseModel):
@@ -59,7 +64,15 @@ def create_app(
         response = await call_next(request)
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
-        elif request.url.path == "/" or request.url.path.startswith("/static/"):
+        elif request.url.path in {
+            "/",
+            "/privacy",
+            "/privacy/",
+            "/support",
+            "/support/",
+            "/robots.txt",
+            "/sitemap.xml",
+        } or request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -110,6 +123,42 @@ def create_app(
     @app.get("/ads.txt", response_class=PlainTextResponse)
     def ads_txt() -> PlainTextResponse:
         return PlainTextResponse(ADS_TXT.read_text(encoding="utf-8"), media_type="text/plain")
+
+    def public_page(filename: str) -> HTMLResponse:
+        path = (PUBLIC_TEMPLATES / filename).resolve()
+        if PUBLIC_TEMPLATES not in path.parents or not path.is_file():
+            raise HTTPException(404)
+        return HTMLResponse(path.read_text(encoding="utf-8"))
+
+    @app.get("/privacy", response_class=HTMLResponse)
+    @app.get("/privacy/", response_class=HTMLResponse, include_in_schema=False)
+    def privacy() -> HTMLResponse:
+        return public_page("privacy.html")
+
+    @app.get("/support", response_class=HTMLResponse)
+    @app.get("/support/", response_class=HTMLResponse, include_in_schema=False)
+    def support() -> HTMLResponse:
+        return public_page("support.html")
+
+    @app.get("/robots.txt", response_class=PlainTextResponse)
+    def robots_txt() -> PlainTextResponse:
+        return PlainTextResponse(
+            "User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: "
+            f"{PUBLIC_ORIGIN}/sitemap.xml\n",
+            media_type="text/plain",
+        )
+
+    @app.get("/sitemap.xml")
+    def sitemap_xml() -> Response:
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"<url><loc>{PUBLIC_ORIGIN}/</loc></url>"
+            f"<url><loc>{PUBLIC_ORIGIN}/support</loc></url>"
+            f"<url><loc>{PUBLIC_ORIGIN}/privacy</loc></url>"
+            "</urlset>"
+        )
+        return Response(content=body, media_type="application/xml")
 
     @app.get("/static/{filename}")
     def static_file(filename: str) -> FileResponse:
@@ -178,20 +227,36 @@ def create_app(
         )
         session.qr_login_id = login_id
         session.qr_login = login
+        started_at = time.monotonic()
         try:
             status = login.start()
         except (LoginProtocolError, OSError) as exc:
+            QR_LOGGER.warning(
+                "qr_start_failed error=%s elapsed_ms=%d",
+                type(exc).__name__,
+                round((time.monotonic() - started_at) * 1000),
+            )
             session.qr_login = None
             session.qr_login_id = None
             raise HTTPException(503, {"message": "暂时无法生成微信读书二维码，请稍后重试。", "kind": "qr_unavailable"}) from exc
+        QR_LOGGER.info(
+            "qr_start_ready elapsed_ms=%d",
+            round((time.monotonic() - started_at) * 1000),
+        )
         return _qr_payload(login_id, status)
 
     @app.get("/api/weread/qr/{login_id}/status")
     def qr_status(login_id: str, request: Request) -> dict[str, Any]:
         session = session_for(request)
         login = _session_qr(session, login_id)
+        started_at = time.monotonic()
         login.poll()
         status = login.status()
+        QR_LOGGER.info(
+            "qr_status state=%s elapsed_ms=%d",
+            status["state"],
+            round((time.monotonic() - started_at) * 1000),
+        )
         result = {"login_id": login_id, **status, "connected": status["state"] == "success"}
         if status["state"] == "success":
             result["accounts"] = list(session.accounts.values())

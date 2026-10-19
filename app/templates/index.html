@@ -4,9 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="连接微信读书，选择已关注公众号的文章，批量归档为本地 Markdown 和 ZIP。">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#0c714b">
+  <link rel="canonical" href="https://www.weread-export.top/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="微信读书文章归档｜公众号文章批量导出">
+  <meta property="og:description" content="从微信读书读取已关注公众号文章，筛选后导出为本地 Markdown 和 ZIP。">
+  <meta property="og:url" content="https://www.weread-export.top/">
   <title>微信读书文章归档</title>
   <link rel="icon" href="/static/icon-journal-text.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css?v=20261019-guide-top">
+  <link rel="stylesheet" href="/static/public.css?v=20261019-ads">
 </head>
 <body>
 <header class="site-header">
@@ -22,6 +30,24 @@
 </header>
 <main>
   <div id="app-panel">
+    <section id="public-info" class="shell public-info" aria-labelledby="public-info-title">
+      <div class="public-intro">
+        <p class="eyebrow">WeRead MP Web · 本地归档工具</p>
+        <h1 id="public-info-title">把微信读书里的公众号文章保存到本地</h1>
+        <p>连接你在微信读书中关注的公众号，按标题或日期筛选文章，导出带 YAML Front Matter 的 Markdown 文件和 ZIP 压缩包。文章内容只用于本次导出，不建立在线文章库。</p>
+      </div>
+      <div class="public-grid">
+        <article><h2>适合哪些场景</h2><p>适合整理长期关注的公众号、保存研究资料、迁移个人阅读记录，以及把文章交给本地 Markdown 工具继续管理。</p></article>
+        <article><h2>工作方式</h2><p>扫码连接微信读书后读取已关注列表。你可以读取最近 1 年或自定义日期范围，再勾选文章批量导出；下载图片为可选项。</p></article>
+        <article><h2>使用边界</h2><p>本站不绕过登录、验证码或访问限制，只处理微信读书实际返回的内容。登录 Cookie 仅在当前服务进程内存中保存。</p></article>
+      </div>
+      <div class="public-faq" aria-labelledby="public-faq-title">
+        <h2 id="public-faq-title">常见问题</h2>
+        <details><summary>扫码后为什么需要等待？</summary><p>微信读书登录确认使用上游轮询，手机确认后通常需要几秒钟。若二维码过期，重新生成二维码即可。</p></details>
+        <details><summary>为什么历史文章数量不完整？</summary><p>公众号历史列表来自微信读书实际提供的接口。可以扩大日期范围重新读取，但不能保证接口之外的内容。</p></details>
+        <details><summary>文章和 Cookie 会被公开吗？</summary><p>不会。文章只在当前导出任务中处理，Cookie 不写入日志、ZIP、浏览器本地存储或公开页面。</p></details>
+      </div>
+    </section>
     <div class="shell operation-guide-top">
       <details id="operation-guide" class="operation-guide">
         <summary><span class="guide-summary"><img class="icon" src="/static/icon-file-earmark-text.svg" alt=""><strong>操作指引</strong></span><span class="guide-summary-note">扫码、读取、导出</span></summary>
@@ -43,7 +69,7 @@
     <section id="connect-panel" class="shell connect-wrap" aria-labelledby="connect-title">
       <div class="card connect-card">
         <div class="connect-icon"><img class="icon" src="/static/icon-journal-text.svg" alt=""></div>
-        <h1 id="connect-title">连接微信读书</h1><p class="lead">连接后，即可查看你关注的公众号文章，<br>把想留下的内容保存到本地。</p>
+        <h2 id="connect-title">连接微信读书</h2><p class="lead">连接后，即可查看你关注的公众号文章，<br>把想留下的内容保存到本地。</p>
         <button id="scan-connect" class="button" type="button">扫码连接</button>
         <p class="message">使用微信扫描二维码即可连接，二维码只在当前服务内存中短暂有效。</p>
         <div class="connect-note"><img class="icon" src="/static/icon-lock.svg" alt=""><span>只读取已关注的公众号与选中文章。<b>连接信息仅在服务内存中保存</b>，文章不上传到其他服务。</span></div>
@@ -116,6 +142,12 @@
     <div id="dock" class="dock" hidden><div class="shell dock-inner"><div><div class="sel"><b id="selected-count">0</b><span>篇已选</span></div><p id="dock-hint" class="hint">勾选要导出的文章</p></div><div class="actions"><button id="view-job" class="button button-secondary button-small" type="button" hidden>下载结果</button><button id="clear-selection" class="button button-secondary button-small" type="button" hidden>取消选择</button><button id="export" class="button" type="button" disabled>下载文章</button></div></div></div>
   </div>
 </main>
+<footer class="site-footer">
+  <div class="shell site-footer-inner">
+    <span>WeRead MP Web · 微信读书公众号文章本地归档</span>
+    <nav aria-label="网站信息"><a href="/support">使用支持</a><a href="/privacy">隐私政策</a><a href="https://github.com/chenjw0924-spec/weread-mp-web" rel="noopener noreferrer">项目源码</a></nav>
+  </div>
+</footer>
 <dialog id="download-dialog" class="card modal" aria-labelledby="download-title">
   <div class="modal-head"><div><h2 id="download-title">下载文章</h2><p id="download-sub" class="sub">文章将保存为 Markdown，并打包为 ZIP。</p></div><button id="close-download" class="modal-close" aria-label="关闭下载窗口" type="button"><img class="icon" src="/static/icon-x-lg.svg" alt=""></button></div>
   <div id="download-confirm"><label class="dl-opt"><span><b>同时下载图片</b><small>把文章里的图片一并下载到 ZIP。默认关闭，关闭时图片保留原图链接。</small></span><input id="include-images" type="checkbox"></label><div class="modal-foot"><button id="cancel-download" class="button button-secondary" type="button">取消</button><button id="start-download" class="button" type="button">开始下载</button></div></div>
@@ -133,6 +165,6 @@
   <div class="connect-icon"><img class="icon" src="/static/icon-lock.svg" alt=""></div><h2 id="expired-title">连接已过期</h2><p id="expired-description" class="sub">登录状态已失效，请重新连接。当前已选文章会为你保留。</p><p id="retained-count" class="retained"></p><div><button id="reconnect" class="button" type="button">重新连接</button></div>
 </dialog>
 <script src="/static/archive-ui.js?v=20261019-guide-top"></script>
-<script src="/static/app.js?v=20261019-guide-top"></script>
+<script src="/static/app.js?v=20261019-qr-retry"></script>
 </body>
 </html>

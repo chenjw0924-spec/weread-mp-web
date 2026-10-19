@@ -59,6 +59,18 @@ def test_homepage_includes_collapsed_operation_guide():
         assert text in guide_text
 
 
+def test_homepage_has_public_ad_review_content_and_site_links():
+    page = BeautifulSoup((ROOT / "app/templates/index.html").read_text(), "html.parser")
+    assert page.select_one('link[rel="canonical"][href="https://www.weread-export.top/"]') is not None
+    public_info = page.select_one("#public-info")
+    assert public_info is not None
+    assert "不建立在线文章库" in public_info.get_text(" ", strip=True)
+    footer = page.select_one(".site-footer")
+    assert footer is not None
+    assert footer.select_one('a[href="/privacy"]') is not None
+    assert footer.select_one('a[href="/support"]') is not None
+
+
 def test_scan_events_show_loading_otp_and_verified_success():
     result = subprocess.run(['node', '--test', 'tests/login-ui.cjs', 'tests/archive-ui.cjs'], cwd=ROOT, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr

@@ -9,6 +9,7 @@
     connectionVersion: 0, connected: false, authenticated: false, loading: false, listVersion: 0,
     jobId: '', job: null, jobBookId: '', timer: null, pollVersion: 0, polling: false,
     qrLoginId: '', qrStatusUrl: '', qrTimer: null, qrVersion: 0, qrPolling: false, qrScanned: false,
+    qrStatusFailures: 0, qrImageFailures: 0,
     submitting: false, downloading: false, expiredAuth: false, listError: false, packages: new Map(), needsJobRefresh: false, expiredJobs: new Set(),
   };
   const api = async (path, options = {}) => {
@@ -49,11 +50,13 @@
   const stopQrPolling = () => { clearTimeout(state.qrTimer); state.qrTimer = null; state.qrVersion++; state.qrPolling = false; };
   const showConnection = () => {
     stopQrPolling(); state.qrLoginId = ''; state.qrStatusUrl = ''; state.qrScanned = false;
+    $('public-info').hidden = false;
     $('operation-guide').hidden = false;
     $('connect-panel').hidden = false; $('scan-panel').hidden = true;
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
   };
   const showScan = () => {
+    $('public-info').hidden = true;
     $('operation-guide').hidden = false;
     $('connect-panel').hidden = true; $('scan-panel').hidden = false;
     $('selection-panel').hidden = true; $('dock').hidden = true; step(1);
@@ -64,6 +67,7 @@
     showConnection();
   };
   const showSelection = () => {
+    $('public-info').hidden = true;
     $('operation-guide').hidden = true;
     $('connect-panel').hidden = true; $('scan-panel').hidden = true;
     $('selection-panel').hidden = false; $('dock').hidden = false; step(2);
@@ -286,6 +290,7 @@
     try {
       const data = await api(state.qrStatusUrl || `/api/weread/qr/${encodeURIComponent(state.qrLoginId)}/status`, { timeoutMs: 70000 });
       if (version !== state.qrVersion) return;
+      state.qrStatusFailures = 0;
       setQrStatus(data.state, data.message);
       if (data.state === 'success' && data.connected) {
         stopQrPolling(); state.qrLoginId = ''; state.qrStatusUrl = ''; state.connectionVersion++;
@@ -295,13 +300,23 @@
       }
     } catch (error) {
       if (version !== state.qrVersion) return;
+      state.qrStatusFailures += 1;
+      const retryable = state.qrStatusFailures <= 2 && (!error.status || error.status === 404 || error.status >= 500);
+      if (retryable) {
+        setQrStatus('waiting', '扫码状态暂时不可用，正在重新生成二维码…');
+        state.qrTimer = setTimeout(() => {
+          if (version === state.qrVersion) startQrLogin();
+        }, 700);
+        return;
+      }
       setQrStatus('failed', UI.friendlyError(error, '暂时无法获取扫码状态，请重新生成二维码。'));
     } finally { if (version === state.qrVersion) state.qrPolling = false; }
   };
-  const startQrLogin = async () => {
+  const startQrLogin = async (attempt = 0) => {
     stopQrPolling(); showScan();
     const version = state.qrVersion;
     state.qrScanned = false;
+    state.qrStatusFailures = 0;
     $('qr-refresh').disabled = true; $('qr-refresh').hidden = true;
     $('qr-image').removeAttribute('src'); setQrStatus('waiting', '正在生成二维码…');
     $('otp-code').value = ''; $('otp-message').textContent = ''; $('otp-message').hidden = true;
@@ -314,6 +329,14 @@
       await pollQrLogin(version);
     } catch (error) {
       if (version !== state.qrVersion) return;
+      const retryable = attempt < 2 && (!error.status || error.status >= 500 || error.kind === 'qr_unavailable');
+      if (retryable) {
+        setQrStatus('waiting', `二维码生成较慢，正在重试（${attempt + 1}/2）…`);
+        state.qrTimer = setTimeout(() => {
+          if (version === state.qrVersion) startQrLogin(attempt + 1);
+        }, 700);
+        return;
+      }
       $('qr-refresh').disabled = false; setQrStatus('failed', UI.friendlyError(error, '暂时无法生成微信读书二维码，请稍后重试。'));
     }
   };
