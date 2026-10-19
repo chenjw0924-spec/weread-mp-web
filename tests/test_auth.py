@@ -22,9 +22,14 @@ def make_settings(**overrides):
     return Settings(**values)
 
 
-def test_settings_require_an_application_password():
-    with pytest.raises(ValueError, match="APP_PASSWORD"):
-        Settings.from_env({})
+def test_settings_do_not_require_an_application_password():
+    assert Settings.from_env({}).app_password == ""
+
+
+def test_settings_default_article_list_capacity_is_one_hundred():
+    settings = Settings.from_env({"APP_PASSWORD": "test-password-long"})
+
+    assert settings.default_list_articles == 100
 
 
 def test_login_creates_an_expiring_opaque_session():

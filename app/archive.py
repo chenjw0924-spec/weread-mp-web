@@ -54,6 +54,7 @@ class ArchiveService:
         include_images: bool,
         progress_callback: Callable[[int], None] | None = None,
         book_id: str = "",
+        item_callback: Callable[[str, str, str], None] | None = None,
     ) -> ArchiveResult:
         total = len(articles)
         progress = progress_callback or (lambda value: None)
@@ -64,6 +65,8 @@ class ArchiveService:
         used_names: set[str] = set()
 
         for index, listed in enumerate(articles):
+            if item_callback:
+                item_callback(listed.original_id, "running", "")
             try:
                 html = fetch_article(listed)
                 parsed = parse_article_html(html, listed, book_id=book_id)
@@ -95,8 +98,12 @@ class ArchiveService:
                 used_names.add(markdown_name)
                 entries.append((markdown_name, markdown))
                 entries.extend(image_entries)
+                if item_callback:
+                    item_callback(listed.original_id, "completed", "")
             except Exception as exc:
                 failures.append((listed.original_id, _safe_error(exc)))
+                if item_callback:
+                    item_callback(listed.original_id, "failed", _safe_error(exc))
             progress(round((index + 1) * 100 / total) if total else 100)
 
         zip_path = self.temp_dir / f"archive-{uuid.uuid4().hex}.zip"

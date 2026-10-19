@@ -133,3 +133,16 @@ def test_expired_zip_is_removed_when_job_is_read(tmp_path):
 
     assert registry.get(session, job.job_id).zip_path is None
     assert not zip_path.exists()
+
+
+def test_archive_emits_actual_per_article_state_transitions(tmp_path):
+    service = ArchiveService(temp_dir=tmp_path)
+    articles = [ListedArticle('成功', '', '测试', 'ok', 0), ListedArticle('失败', '', '测试', 'bad', 0)]
+    events = []
+    def fetch(item):
+        if item.original_id == 'bad':
+            raise RuntimeError('unavailable')
+        return '<div id="js_content"><p>正文</p></div>'
+    result = service.archive(articles, fetch, False, item_callback=lambda *event: events.append(event))
+    assert [(item, status) for item, status, reason in events] == [('ok', 'running'), ('ok', 'completed'), ('bad', 'running'), ('bad', 'failed')]
+    assert result.completed == 1

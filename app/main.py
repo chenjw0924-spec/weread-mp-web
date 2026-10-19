@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import date
 import os
 from typing import Any
 
@@ -11,6 +12,7 @@ from .auth import AuthManager, Session
 from .config import Settings
 from .jobs import JobRegistry
 from .weread import WeReadClient, WeReadError
+from .weread_login import LoginClient, LoginProtocolError, QRLogin
 
 
 SESSION_COOKIE = "weread_session"
@@ -19,12 +21,12 @@ STATIC = ROOT / "app" / "static"
 TEMPLATES = ROOT / "app" / "templates"
 
 
-class LoginRequest(BaseModel):
-    password: str = Field(max_length=512)
-
-
 class CookieRequest(BaseModel):
     cookie: str = Field(min_length=1, max_length=16_384)
+
+
+class OtpRequest(BaseModel):
+    code: Any
 
 
 class JobRequest(BaseModel):
@@ -33,7 +35,12 @@ class JobRequest(BaseModel):
     include_images: bool = False
 
 
-def create_app(settings: Settings | None = None, weread_client: Any | None = None, artifact_dir: str | Path | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    weread_client: Any | None = None,
+    artifact_dir: str | Path | None = None,
+    qr_client_factory: Any | None = None,
+) -> FastAPI:
     settings = settings or Settings.from_env()
     client = weread_client or WeReadClient(settings)
     auth = AuthManager(settings)
@@ -44,18 +51,48 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
     app.state.auth = auth
     app.state.weread = client
     app.state.jobs = jobs
+    app.state.qr_client_factory = qr_client_factory
 
     @app.middleware("http")
     async def no_store_api(request: Request, call_next):
         response = await call_next(request)
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.middleware("http")
+    async def anonymous_session(request: Request, call_next):
+        if request.url.path != "/" and not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        token = request.cookies.get(SESSION_COOKIE)
+        session = auth.get_session(token)
+        created = False
+        if session is None:
+            token, session = auth.create_anonymous_session()
+            created = True
+        request.state.weread_session = session
+        request.state.weread_session_token = token
+        response = await call_next(request)
+        if created:
+            response.set_cookie(
+                SESSION_COOKIE,
+                token,
+                max_age=settings.session_ttl_seconds,
+                httponly=True,
+                secure=settings.cookie_secure,
+                samesite="strict",
+                path="/",
+            )
         return response
 
     def session_for(request: Request) -> Session:
-        session = auth.get_session(request.cookies.get(SESSION_COOKIE))
+        session = getattr(request.state, "weread_session", None)
         if session is None:
-            raise HTTPException(401, "请先输入访问密码")
+            session = auth.get_session(request.cookies.get(SESSION_COOKIE))
+        if session is None:
+            raise HTTPException(503, "当前会话不可用，请刷新页面重试")
         return session
 
     @app.get("/healthz")
@@ -76,14 +113,6 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
             raise HTTPException(404)
         return FileResponse(path)
 
-    @app.post("/api/login")
-    def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, bool]:
-        token = auth.login(payload.password, request.client.host if request.client else "unknown")
-        if token is None:
-            raise HTTPException(401, "访问密码不正确或尝试过于频繁")
-        response.set_cookie(SESSION_COOKIE, token, max_age=settings.session_ttl_seconds, httponly=True, secure=settings.cookie_secure, samesite="strict", path="/")
-        return {"authenticated": True}
-
     @app.post("/api/logout", status_code=204)
     def logout(request: Request) -> Response:
         auth.logout(request.cookies.get(SESSION_COOKIE))
@@ -99,6 +128,7 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
     @app.post("/api/weread/connect")
     def connect(payload: CookieRequest, request: Request) -> dict[str, Any]:
         session = session_for(request)
+        _cancel_qr(session)
         try:
             accounts = client.validate_cookie(payload.cookie)
         except WeReadError as exc:
@@ -108,6 +138,95 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
         session.articles.clear()
         session.coverage.clear()
         return {"connected": True, "accounts": list(session.accounts.values())}
+
+    @app.post("/api/weread/qr/start")
+    def qr_start(request: Request) -> dict[str, Any]:
+        session = session_for(request)
+        if session.connected_cookie:
+            raise HTTPException(409, "微信读书已经连接")
+        if session.qr_login and session.qr_login_id:
+            current = session.qr_login.status()
+            if current["state"] in {"waiting", "scanned", "otp_required"}:
+                return _qr_payload(session.qr_login_id, current)
+
+        import secrets
+
+        login_id = secrets.token_urlsafe(24)
+
+        def save_cookie(cookie: str) -> None:
+            accounts = client.validate_cookie(cookie)
+            session.connected_cookie = cookie
+            session.accounts = {
+                account.book_id: {
+                    "book_id": account.book_id,
+                    "title": account.title,
+                    "cover_url": account.cover_url,
+                }
+                for account in accounts
+            }
+            session.articles.clear()
+            session.coverage.clear()
+
+        login = QRLogin(
+            save_cookie,
+            client_factory=app.state.qr_client_factory or LoginClient,
+        )
+        session.qr_login_id = login_id
+        session.qr_login = login
+        try:
+            status = login.start()
+        except (LoginProtocolError, OSError) as exc:
+            session.qr_login = None
+            session.qr_login_id = None
+            raise HTTPException(503, {"message": "暂时无法生成微信读书二维码，请稍后重试。", "kind": "qr_unavailable"}) from exc
+        return _qr_payload(login_id, status)
+
+    @app.get("/api/weread/qr/{login_id}/status")
+    def qr_status(login_id: str, request: Request) -> dict[str, Any]:
+        session = session_for(request)
+        login = _session_qr(session, login_id)
+        status = login.status()
+        result = {"login_id": login_id, **status, "connected": status["state"] == "success"}
+        if status["state"] == "success":
+            result["accounts"] = list(session.accounts.values())
+        return result
+
+    @app.post("/api/weread/qr/{login_id}/verify")
+    def qr_verify(login_id: str, payload: OtpRequest, request: Request) -> dict[str, Any]:
+        session = session_for(request)
+        login = _session_qr(session, login_id)
+        try:
+            status = login.submit_otp(payload.code)
+        except LoginProtocolError as exc:
+            kind = str(exc)
+            messages = {
+                "invalid_otp": "请输入手机显示的 4 位数字验证码。",
+                "otp_expired": "二维码已过期，请重新生成。",
+                "otp_not_required": "当前扫码任务不需要验证码，请等待状态更新。",
+                "otp_verification_pending": "验证码正在验证，请稍候。",
+            }
+            raise HTTPException(400, detail={"message": messages.get(kind, "验证码提交失败，请重新扫码。"), "kind": kind}) from exc
+        result = {"login_id": login_id, **status, "connected": status["state"] == "success"}
+        if status["state"] == "success":
+            result["accounts"] = list(session.accounts.values())
+        return result
+
+    @app.get("/api/weread/qr/{login_id}/image")
+    def qr_image(login_id: str, request: Request) -> Response:
+        session = session_for(request)
+        login = _session_qr(session, login_id)
+        image = login.image()
+        if not image:
+            raise HTTPException(410, "二维码已失效，请重新生成")
+        return Response(content=image, media_type="image/svg+xml")
+
+    @app.post("/api/weread/qr/{login_id}/cancel", status_code=204)
+    def qr_cancel(login_id: str, request: Request) -> Response:
+        session = session_for(request)
+        _session_qr(session, login_id).cancel()
+        session.qr_login = None
+        session.qr_login_id = None
+        return Response(status_code=204)
 
     @app.delete("/api/weread/connect", status_code=204)
     def disconnect(request: Request) -> Response:
@@ -123,12 +242,28 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
         return {"accounts": list(session.accounts.values())}
 
     @app.get("/api/accounts/{book_id}/articles")
-    def articles(book_id: str, request: Request) -> dict[str, Any]:
+    def articles(
+        book_id: str,
+        request: Request,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict[str, Any]:
         session = session_for(request)
         if not session.connected_cookie or book_id not in session.accounts:
             raise HTTPException(409, "请先连接微信读书")
         try:
-            result = client.list_articles(session.connected_cookie, book_id, settings.max_archive_articles)
+            if from_date is None and to_date is None:
+                from_date, to_date = _default_article_range()
+            from_date, to_date = WeReadClient._validate_date_range(from_date, to_date)
+            date_search = bool(from_date or to_date)
+            limit = settings.max_archive_articles if date_search else settings.default_list_articles
+            result = client.list_articles(
+                session.connected_cookie,
+                book_id,
+                limit,
+                from_date=from_date,
+                to_date=to_date,
+            )
         except WeReadError as exc:
             raise HTTPException(400, detail={"message": str(exc), "kind": exc.kind})
         session.articles[book_id] = [_article_dict(item) for item in result.articles]
@@ -159,8 +294,16 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(job_id: str, request: Request) -> dict[str, Any]:
         session = session_for(request)
+        if not session.connected_cookie:
+            raise HTTPException(409, "请先连接微信读书")
         try:
-            return _job_dict(jobs.retry_failed(session, job_id))
+            previous = jobs.get(session, job_id)
+            if previous is None:
+                raise KeyError(job_id)
+            book_id = jobs._book_for(session, previous)
+            cookie = session.connected_cookie
+            callback = lambda item: client.get_article_html(cookie, book_id, item.original_id)
+            return _job_dict(jobs.retry_failed(session, job_id, callback))
         except (KeyError, ValueError) as exc:
             raise HTTPException(400, str(exc))
 
@@ -179,12 +322,45 @@ def create_app(settings: Settings | None = None, weread_client: Any | None = Non
     return app
 
 
+def _default_article_range(today: date | None = None) -> tuple[str, str]:
+    current = today or date.today()
+    try:
+        year_ago = current.replace(year=current.year - 1)
+    except ValueError:
+        year_ago = current.replace(year=current.year - 1, month=2, day=28)
+    return year_ago.isoformat(), current.isoformat()
+
+
+def _cancel_qr(session: Session) -> None:
+    if session.qr_login:
+        session.qr_login.cancel()
+    session.qr_login = None
+    session.qr_login_id = None
+
+
+def _session_qr(session: Session, login_id: str) -> Any:
+    if not session.qr_login or session.qr_login_id != login_id:
+        raise HTTPException(404, "扫码任务不存在")
+    return session.qr_login
+
+
+def _qr_payload(login_id: str, status: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "login_id": login_id,
+        "state": status["state"],
+        "message": status.get("message", ""),
+        "expires_at": status.get("expires_at"),
+        "image_url": f"/api/weread/qr/{login_id}/image",
+        "status_url": f"/api/weread/qr/{login_id}/status",
+    }
+
+
 def _article_dict(item: Any) -> dict[str, Any]:
     return {"title": item.title, "summary": item.summary, "account_name": item.account_name, "original_id": item.original_id, "published_at": item.published_at, "date": item.date, "read_count": item.read_count, "like_count": item.like_count}
 
 
 def _job_dict(job: Any) -> dict[str, Any]:
-    return {"job_id": job.job_id, "status": job.status, "progress": job.progress, "completed": job.completed, "total": job.total, "failures": [{"article_id": item, "reason": reason} for item, reason in job.failures], "warnings": [{"article_id": item, "reason": reason} for item, reason in job.warnings], "download_ready": bool(job.zip_path)}
+    return {"job_id": job.job_id, "status": job.status, "progress": job.progress, "completed": job.completed, "processed": job.processed, "connection_expired": job.connection_expired, "total": job.total, "items": [dict(item) for item in job.items], "failures": [{"article_id": item, "reason": reason} for item, reason in job.failures], "warnings": [{"article_id": item, "reason": reason} for item, reason in job.warnings], "download_ready": bool(job.zip_path)}
 
 
 def _remove_file(path: Path) -> None:
@@ -194,4 +370,4 @@ def _remove_file(path: Path) -> None:
         pass
 
 
-app = create_app() if os.environ.get("APP_PASSWORD") else None
+app = create_app()

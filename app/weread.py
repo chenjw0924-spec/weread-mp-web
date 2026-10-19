@@ -157,11 +157,16 @@ class WeReadClient:
         cookie: str,
         book_id: str,
         max_articles: int | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
     ) -> ArticleListResult:
         if not re.fullmatch(r"MP_WXS_[A-Za-z0-9_-]{1,100}", book_id):
             raise WeReadError("Choose a valid WeRead public account.", "invalid_request")
 
-        article_limit = max_articles or self.settings.max_archive_articles
+        from_date, to_date = self._validate_date_range(from_date, to_date)
+        date_search = bool(from_date or to_date)
+        default_limit = self.settings.max_archive_articles if date_search else self.settings.default_list_articles
+        article_limit = default_limit if max_articles is None else max_articles
         article_limit = min(article_limit, self.settings.max_archive_articles)
         articles: list[ListedArticle] = []
         seen_ids: set[str] = set()
@@ -213,12 +218,23 @@ class WeReadClient:
                 break
             if fingerprint:
                 fingerprints.add(fingerprint)
+            candidates = page_items
+            if date_search:
+                candidates = [
+                    item for item in page_items
+                    if (not from_date or item.date >= from_date)
+                    and (not to_date or item.date <= to_date)
+                ]
             remaining = article_limit - len(articles)
-            articles.extend(page_items[:remaining])
+            articles.extend(candidates[:remaining])
             if len(articles) >= article_limit:
                 stop_reason = "article_limit"
                 break
-            if data.get("clearAll"):
+            page_dates = [item.date for item in page_items if item.date]
+            if date_search and from_date and page_dates and min(page_dates) < from_date:
+                stop_reason = "date_range_reached"
+                break
+            if data.get("clearAll") and not date_search:
                 stop_reason = "we_read_terminal"
                 break
 
@@ -245,6 +261,19 @@ class WeReadClient:
             earliest_date=min(dates) if dates else None,
             latest_date=max(dates) if dates else None,
         )
+
+    @staticmethod
+    def _validate_date_range(from_date: str | None, to_date: str | None) -> tuple[str | None, str | None]:
+        for value in (from_date, to_date):
+            if value is None:
+                continue
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except (TypeError, ValueError) as exc:
+                raise WeReadError("Date filters must use YYYY-MM-DD.", "invalid_request") from exc
+        if from_date and to_date and from_date > to_date:
+            raise WeReadError("The start date cannot be later than the end date.", "invalid_request")
+        return from_date, to_date
 
     def get_article_html(self, cookie: str, book_id: str, original_id: str) -> str:
         if not re.fullmatch(r"MP_WXS_[A-Za-z0-9_-]{1,100}", book_id) or not original_id:

@@ -20,6 +20,10 @@ class ArchiveJob:
     progress: int = 0
     completed: int = 0
     total: int = 0
+    book_id: str = ""
+    connection_expired: bool = False
+    processed: int = 0
+    items: list[dict[str, str]] = field(default_factory=list)
     failures: list[tuple[str, str]] = field(default_factory=list)
     warnings: list[tuple[str, str]] = field(default_factory=list)
     zip_path: str | None = None
@@ -55,6 +59,8 @@ class JobRegistry:
                 raise ValueError("归档任务过多，请等待当前任务完成")
             callback = fetch_article or self.fetch_article
             job = ArchiveJob(uuid.uuid4().hex, [item.original_id for item in selected], include_images, total=len(selected), fetch_article=callback)
+            job.book_id = book_id
+            job.items = [{"article_id": item.original_id, "title": item.title, "status": "queued", "reason": ""} for item in selected]
             session.jobs[job.job_id] = job
         self.executor.submit(self._run, session, job, selected, book_id, callback)
         return job
@@ -75,15 +81,17 @@ class JobRegistry:
                 job.zip_path = None
         return job
 
-    def retry_failed(self, session: Session, job_id: str) -> ArchiveJob:
+    def retry_failed(self, session: Session, job_id: str, fetch_article: Callable[[ListedArticle], str] | None = None) -> ArchiveJob:
         previous = self.get(session, job_id)
         if previous is None:
             raise KeyError(job_id)
         if previous.fetch_article is None:
             raise ValueError("任务缺少文章请求上下文")
-        return self.start(session, self._book_for(session, previous), [item_id for item_id, _ in previous.failures], previous.include_images, previous.fetch_article)
+        return self.start(session, self._book_for(session, previous), [item_id for item_id, _ in previous.failures], previous.include_images, fetch_article or previous.fetch_article)
 
     def _book_for(self, session: Session, job: ArchiveJob) -> str:
+        if job.book_id in session.articles:
+            return job.book_id
         for book_id, articles in session.articles.items():
             ids = {str(item.get("original_id")) for item in articles}
             if set(job.article_ids).issubset(ids):
@@ -96,7 +104,34 @@ class JobRegistry:
         def update(value: int) -> None:
             with self._lock:
                 job.progress = value
-        result: ArchiveResult = self.archive_service.archive(articles, fetch_article, job.include_images, update, book_id)
+        def update_item(article_id: str, status: str, reason: str) -> None:
+            with self._lock:
+                for item in job.items:
+                    if item["article_id"] == article_id:
+                        item.update(status=status, reason=reason)
+                        break
+                job.completed = sum(item["status"] == "completed" for item in job.items)
+                job.processed = sum(item["status"] in {"completed", "failed"} for item in job.items)
+        try:
+            def fetch_with_status(article: ListedArticle) -> str:
+                try:
+                    return fetch_article(article)
+                except Exception as exc:
+                    if getattr(exc, "kind", "") == "expired":
+                        with self._lock:
+                            job.connection_expired = True
+                    raise
+            result: ArchiveResult = self.archive_service.archive(articles, fetch_with_status, job.include_images, update, book_id, item_callback=update_item)
+        except Exception:
+            # Packaging failures must also terminate polling and leave a retryable task.
+            with self._lock:
+                job.status = "failed"
+                job.failures = [(item.original_id, "无法生成下载文件，请重试") for item in articles]
+                for item in job.items:
+                    item.update(status="failed", reason="无法生成下载文件，请重试")
+                job.completed = 0
+                job.processed = job.total
+            return
         with self._lock:
             job.status = "completed" if not result.failures else "failed"
             job.progress = 100

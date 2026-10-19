@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -34,6 +35,10 @@ def review_group(timestamp, records):
             for title, original_id, published in records
         ],
     }
+
+
+def day_timestamp(value):
+    return int(datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp())
 
 
 def client_with(payloads):
@@ -153,3 +158,40 @@ def test_list_stops_when_article_limit_is_reached_mid_page():
     assert len(result.articles) == 3
     assert result.stop_reason == "article_limit"
     assert len(calls) == 1
+
+
+def test_list_default_capacity_is_not_limited_to_twenty_articles():
+    records = [(f"文章 {i}", str(i), day_timestamp(f"2026-10-{i + 1:02d}")) for i in range(25)]
+    client, calls = client_with([{
+        "reviews": [review_group(20, records)],
+        "clearAll": 1,
+    }])
+
+    result = client.list_articles("wr_skey=s; wr_vid=v", "MP_WXS_42")
+
+    assert len(result.articles) == 25
+    assert result.stop_reason == "we_read_terminal"
+    assert len(calls) == 1
+
+
+def test_date_range_continues_pagination_and_returns_only_matching_articles():
+    client, calls = client_with([
+        {"reviews": [review_group(30, [("较新", "new", day_timestamp("2026-10-10"))])], "clearAll": 1},
+        {"reviews": [review_group(20, [
+            ("命中", "match", day_timestamp("2026-09-10")),
+            ("较早", "old", day_timestamp("2026-08-01")),
+        ])], "clearAll": 0},
+    ])
+
+    result = client.list_articles(
+        "wr_skey=s; wr_vid=v",
+        "MP_WXS_42",
+        max_articles=100,
+        from_date="2026-09-01",
+        to_date="2026-09-30",
+    )
+
+    assert [article.original_id for article in result.articles] == ["match"]
+    assert result.stop_reason == "date_range_reached"
+    assert result.pages == 2
+    assert "offset=30" in calls[1]

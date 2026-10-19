@@ -12,6 +12,8 @@ from .config import Settings
 class Session:
     expires_at: float
     connected_cookie: str | None = field(default=None, repr=False)
+    qr_login_id: str | None = field(default=None, repr=False)
+    qr_login: Any = field(default=None, repr=False)
     accounts: dict[str, dict[str, Any]] = field(default_factory=dict)
     articles: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     coverage: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -29,6 +31,15 @@ class AuthManager:
     def session_count(self) -> int:
         with self._lock:
             return len(self._sessions)
+
+    def create_anonymous_session(self, now: float | None = None) -> tuple[str, Session]:
+        current = time.monotonic() if now is None else now
+        with self._lock:
+            self._prune_expired(current)
+            token = secrets.token_urlsafe(32)
+            session = Session(expires_at=current + self._settings.session_ttl_seconds)
+            self._sessions[token] = session
+            return token, session
 
     def login(self, password: str, client_ip: str, now: float | None = None) -> str | None:
         current = time.monotonic() if now is None else now
@@ -69,13 +80,19 @@ class AuthManager:
         if not token:
             return
         with self._lock:
-            self._sessions.pop(token, None)
+            session = self._sessions.pop(token, None)
+            if session and session.qr_login:
+                session.qr_login.cancel()
 
     def disconnect_wechat(self, token: str, now: float | None = None) -> None:
         session = self.get_session(token, now)
         if session is None:
             return
         with self._lock:
+            if session.qr_login:
+                session.qr_login.cancel()
+            session.qr_login = None
+            session.qr_login_id = None
             session.connected_cookie = None
             session.accounts.clear()
             session.articles.clear()
@@ -85,4 +102,6 @@ class AuthManager:
     def _prune_expired(self, now: float) -> None:
         expired = [token for token, session in self._sessions.items() if session.expires_at <= now]
         for token in expired:
-            self._sessions.pop(token, None)
+            session = self._sessions.pop(token, None)
+            if session and session.qr_login:
+                session.qr_login.cancel()

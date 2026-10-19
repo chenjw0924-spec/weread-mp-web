@@ -5,7 +5,6 @@ services:
     ports:
       - "127.0.0.1:8765:8000"
     environment:
-      APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
       ARTIFACT_TTL_SECONDS: ${ARTIFACT_TTL_SECONDS:-900}

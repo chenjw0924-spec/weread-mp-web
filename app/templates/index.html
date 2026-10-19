@@ -3,62 +3,118 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>微信读书公众号归档</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <meta name="description" content="连接微信读书，选择已关注公众号的文章，批量归档为本地 Markdown 和 ZIP。">
+  <title>微信读书文章归档</title>
+  <link rel="icon" href="/static/icon-journal-text.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css?v=20261019-otp">
 </head>
 <body>
-  <main class="shell">
-    <header class="masthead">
-      <div>
-        <p class="eyebrow">WEREAD MP ARCHIVE</p>
-        <h1>微信读书公众号归档</h1>
-        <p class="lede">从你已关注的公众号中选择文章，导出为本地 Markdown ZIP。</p>
+<header class="site-header">
+  <div class="shell nav-shell">
+    <div class="brand"><span class="logo" aria-hidden="true">文</span><span class="brand-copy"><strong>微信读书文章归档</strong><small>WeRead MP Web · 批量下载</small></span></div>
+    <nav class="steps" aria-label="流程步骤">
+      <span id="step-1" class="step on" aria-current="step"><span class="n">1</span><span>连接微信读书</span></span><span class="step-sep" aria-hidden="true"></span>
+      <span id="step-2" class="step"><span class="n">2</span><span>选择文章</span></span><span class="step-sep" aria-hidden="true"></span>
+      <span id="step-3" class="step"><span class="n">3</span><span>下载文件</span></span>
+    </nav>
+    <div class="header-actions"><span id="connection-chip" class="conn-chip"><span class="dot" aria-hidden="true"></span><span id="connection-state">未连接</span></span></div>
+  </div>
+</header>
+<main>
+  <div id="app-panel">
+    <section id="connect-panel" class="shell connect-wrap" aria-labelledby="connect-title">
+      <div class="card connect-card">
+        <div class="connect-icon"><img class="icon" src="/static/icon-journal-text.svg" alt=""></div>
+        <h1 id="connect-title">连接微信读书</h1><p class="lead">连接后，即可查看你关注的公众号文章，<br>把想留下的内容保存到本地。</p>
+        <button id="scan-connect" class="button" type="button">扫码连接</button>
+        <p class="message">使用微信扫描二维码即可连接，二维码只在当前服务内存中短暂有效。</p>
+        <div class="connect-note"><img class="icon" src="/static/icon-lock.svg" alt=""><span>只读取已关注的公众号与选中文章。<b>连接信息仅在服务内存中保存</b>，文章不上传到其他服务。</span></div>
+        <details id="advanced-connect" class="advanced">
+          <summary>高级连接 / 异常诊断</summary>
+          <p class="message">适用于已了解浏览器登录信息的用户。填写微信读书网页的 Cookie，仅发送到本站服务用于读取文章，断开连接或服务重启后清除。请勿填写微信密码。</p>
+          <form id="connect-form" class="stack">
+            <label for="cookie">微信读书 Cookie</label><input id="cookie" type="password" autocomplete="off" spellcheck="false" placeholder="wr_skey=…; wr_vid=…" required>
+            <button id="connect-submit" class="button button-secondary" type="submit">验证并连接</button>
+          </form>
+          <p id="connect-message" class="message" role="status" aria-live="polite"></p>
+        </details>
       </div>
-      <button id="logout" class="button quiet" type="button" hidden>退出</button>
-    </header>
-
-    <section id="login-panel" class="panel lock-panel">
-      <h2>输入访问密码</h2>
-      <p>密码只用于保护这个自用站点，不会上传到微信读书。</p>
-      <form id="login-form" class="stack">
-        <label>访问密码<input id="password" type="password" autocomplete="current-password" required></label>
-        <button class="button primary" type="submit">进入归档台</button>
-      </form>
     </section>
-
-    <div id="app-panel" hidden>
-      <section class="panel connection-panel">
-        <div class="section-heading"><div><p class="eyebrow">连接</p><h2>微信读书 Cookie</h2></div><span id="connection-state" class="status">未连接</span></div>
-        <form id="connect-form" class="stack">
-          <label>Cookie<input id="cookie" type="password" autocomplete="off" placeholder="粘贴浏览器中的 Cookie 请求头" required></label>
-          <div class="actions"><button class="button primary" type="submit">验证并连接</button><button id="disconnect" class="button quiet" type="button" hidden>断开连接</button></div>
-        </form>
-        <p id="message" class="message" role="status"></p>
-      </section>
-
-      <section class="panel" id="accounts-panel" hidden>
-        <div class="section-heading"><div><p class="eyebrow">公众号</p><h2>选择已关注公众号</h2></div><button id="refresh-accounts" class="button quiet" type="button">刷新</button></div>
-        <label>公众号<select id="account-select"><option value="">请选择</option></select></label>
-        <div id="coverage" class="coverage"></div>
-      </section>
-
-      <section class="panel" id="articles-panel" hidden>
-        <div class="section-heading"><div><p class="eyebrow">文章列表</p><h2>选择要归档的文章</h2></div><button id="load-articles" class="button quiet" type="button">重新读取</button></div>
-        <div class="filters"><input id="search" type="search" placeholder="搜索标题或摘要"><label>从<input id="from-date" type="date"></label><label>到<input id="to-date" type="date"></label></div>
-        <div class="selection-bar"><label><input id="select-visible" type="checkbox"> 选择当前可见</label><span id="selected-count">已选 0 篇</span></div>
-        <div id="articles" class="article-list" aria-live="polite"></div>
-        <div class="export-bar"><label class="toggle"><input id="include-images" type="checkbox"> 下载图片</label><button id="export" class="button primary" type="button" disabled>导出选中文章</button></div>
-      </section>
-
-      <section class="panel" id="job-panel" hidden>
-        <div class="section-heading"><div><p class="eyebrow">导出任务</p><h2 id="job-title">准备中</h2></div><a id="download" class="button primary" hidden>下载 ZIP</a></div>
-        <div class="progress-track"><div id="progress" class="progress-value"></div></div>
-        <p id="job-status" class="message" role="status"></p>
-        <ul id="failures" class="failures"></ul>
-        <button id="retry" class="button quiet" type="button" hidden>重试失败文章</button>
-      </section>
-    </div>
-  </main>
-  <script src="/static/app.js"></script>
+    <section id="scan-panel" class="shell scan-wrap" hidden aria-labelledby="scan-title">
+      <div class="card scan-card">
+        <div class="qr-box">
+          <div class="qr-frame"><img id="qr-image" alt="微信读书登录二维码"><div id="qr-overlay" class="qr-overlay" hidden><span class="spinner" aria-hidden="true"></span><p id="qr-overlay-text">正在生成二维码…</p></div></div>
+          <p class="qr-hint">二维码有效期约 3 分钟，请使用微信读书扫一扫</p>
+        </div>
+        <div class="scan-copy">
+          <h1 id="scan-title">扫码连接微信读书</h1>
+          <p class="sub">扫码后，服务会在当前会话内读取你已关注的公众号。微信读书 Cookie 只保存在服务进程内存中。</p>
+          <ol class="scan-steps"><li>打开微信，使用扫一扫</li><li>扫描左侧二维码</li><li>在手机上确认登录微信读书</li></ol>
+          <div id="qr-status" class="status-line waiting" role="status" aria-live="polite"><span id="qr-status-icon" class="ico"><span class="spinner" aria-hidden="true"></span></span><span id="qr-status-text">正在准备扫码连接…</span></div>
+          <p id="qr-message" class="message" role="status" aria-live="polite"></p>
+          <form id="otp-form" class="otp-form" hidden>
+            <label for="otp-code">手机显示的 4 位验证码</label>
+            <div class="otp-row"><input id="otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-describedby="otp-message" required><button id="otp-submit" class="button" type="submit">验证</button></div>
+            <p id="otp-message" class="message" role="alert" aria-live="polite"></p>
+          </form>
+          <div class="scan-actions"><button id="qr-refresh" class="button" type="button">重新生成二维码</button><button id="scan-cancel" class="button button-secondary" type="button">返回连接页</button></div>
+        </div>
+      </div>
+    </section>
+    <section id="selection-panel" class="shell" hidden aria-label="选择公众号与文章">
+      <div class="select-grid">
+        <aside class="card side-card" aria-label="我的公众号">
+          <div class="side-heading"><h2>我的公众号</h2><button id="refresh-accounts" class="button-ghost" type="button">刷新</button></div>
+          <div class="search-box"><img class="mag" src="/static/icon-search.svg" alt=""><input id="account-search" type="search" placeholder="搜索公众号" aria-label="搜索公众号"></div>
+          <div class="account-filters" role="group" aria-label="筛选公众号">
+            <button id="accounts-all" class="account-filter" type="button" aria-pressed="true">全部 <span id="account-total">0</span></button>
+            <button id="accounts-favorites" class="account-filter" type="button" aria-pressed="false">已收藏 <span id="favorite-total">0</span></button>
+          </div>
+          <div id="accounts" class="account-list"></div><p id="accounts-empty" class="message" hidden>没有找到公众号，请调整关键词。新关注的公众号可在重新连接后读取。</p>
+          <button id="disconnect" class="button-ghost" type="button" style="margin-top:16px;width:100%">断开连接</button>
+        </aside>
+        <div class="card main-card">
+          <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+          <div id="picker-placeholder" class="picker-placeholder"><img class="icon" src="/static/icon-collection.svg" alt=""><h2>请先选择一个公众号</h2><p>在左侧选择你要导出的公众号，<br>这里会展示可获取的文章。</p></div>
+          <div id="article-loading" class="loading-state" role="status" hidden><span class="spinner" aria-hidden="true"></span>正在读取文章，请稍候…<p class="message">文章较多时需要一些时间。</p></div>
+          <section id="articles-panel" hidden aria-labelledby="account-title">
+            <div class="main-head"><div><h2 id="account-title"></h2><p id="account-sub" class="sub"></p></div><button id="load-articles" class="button-ghost" type="button">重新读取</button></div>
+            <div id="coverage" class="range-note" hidden><img class="icon" src="/static/icon-calendar3.svg" alt=""><span>可获取日期范围：<b id="range-text"></b>（更早的内容可能无法获取）</span></div>
+            <div class="filters">
+              <div class="field grow"><label for="search">标题搜索</label><input id="search" type="search" placeholder="输入标题关键词"></div>
+              <div class="field"><label for="from-date">开始日期</label><input id="from-date" type="date"></div>
+              <div class="field"><label for="to-date">结束日期</label><input id="to-date" type="date"></div>
+              <button id="search-date" class="button-ghost" type="button">按日期读取</button>
+              <button id="reset-filters" class="reset" type="button">清空筛选</button>
+            </div>
+            <p id="filter-message" class="message error" role="status" hidden>结束日期不能早于开始日期，请调整日期范围。</p>
+            <div class="list-tools"><label class="select-all"><input id="select-visible" type="checkbox">全选当前结果</label><span id="list-count" class="list-count" aria-live="polite"></span></div>
+            <div id="articles" class="articles"></div>
+            <div id="articles-empty" class="empty-state" hidden><div class="ic"><img class="icon" src="/static/icon-file-earmark-text.svg" alt=""></div><h3 id="empty-title"></h3><p id="empty-description"></p><button id="empty-action" class="button button-secondary" type="button">清空筛选</button></div>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div id="dock" class="dock" hidden><div class="shell dock-inner"><div><div class="sel"><b id="selected-count">0</b><span>篇已选</span></div><p id="dock-hint" class="hint">勾选要导出的文章</p></div><div class="actions"><button id="view-job" class="button button-secondary button-small" type="button" hidden>下载结果</button><button id="clear-selection" class="button button-secondary button-small" type="button" hidden>取消选择</button><button id="export" class="button" type="button" disabled>下载文章</button></div></div></div>
+  </div>
+</main>
+<dialog id="download-dialog" class="card modal" aria-labelledby="download-title">
+  <div class="modal-head"><div><h2 id="download-title">下载文章</h2><p id="download-sub" class="sub">文章将保存为 Markdown，并打包为 ZIP。</p></div><button id="close-download" class="modal-close" aria-label="关闭下载窗口" type="button"><img class="icon" src="/static/icon-x-lg.svg" alt=""></button></div>
+  <div id="download-confirm"><label class="dl-opt"><span><b>同时下载图片</b><small>把文章里的图片一并下载到 ZIP。默认关闭，关闭时图片保留原图链接。</small></span><input id="include-images" type="checkbox"></label><div class="modal-foot"><button id="cancel-download" class="button button-secondary" type="button">取消</button><button id="start-download" class="button" type="button">开始下载</button></div></div>
+  <section id="job-panel" hidden aria-label="导出进度">
+    <div class="dl-summary"><div class="dl-stat"><small>总文章数</small><b id="job-total">0</b></div><div class="dl-stat ok"><small>成功</small><b id="job-success">0</b></div><div class="dl-stat fail"><small>未成功</small><b id="job-failed">0</b></div></div>
+    <div id="progress-track" class="progress-track" role="progressbar" aria-label="文章导出进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress" class="progress-value"></div></div>
+    <p id="job-status" class="message" role="status" aria-live="polite"></p>
+    <ul id="job-items" class="job-items"></ul><p id="image-warning" class="warning-note" hidden></p>
+    <div id="previous-downloads" class="previous-downloads"></div>
+    <p id="job-message" class="message" role="status" aria-live="polite"></p>
+    <div class="modal-foot"><button id="resume-poll" class="button button-secondary" type="button" hidden>重新查看进度</button><button id="retry" class="button button-secondary" type="button" hidden>重试失败项</button><button id="download" class="button" type="button" hidden>下载 ZIP</button></div>
+  </section>
+</dialog>
+<dialog id="expired-dialog" class="card modal expired-card" aria-labelledby="expired-title">
+  <div class="connect-icon"><img class="icon" src="/static/icon-lock.svg" alt=""></div><h2 id="expired-title">连接已过期</h2><p id="expired-description" class="sub">登录状态已失效，请重新连接。当前已选文章会为你保留。</p><p id="retained-count" class="retained"></p><div><button id="reconnect" class="button" type="button">重新连接</button></div>
+</dialog>
+<script src="/static/archive-ui.js?v=20261019-otp2"></script>
+<script src="/static/app.js?v=20261019-otp2"></script>
 </body>
 </html>

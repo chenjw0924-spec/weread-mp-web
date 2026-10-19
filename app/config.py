@@ -15,11 +15,12 @@ def _as_int(env: Mapping[str, str], key: str, default: int, minimum: int) -> int
 
 @dataclass(frozen=True)
 class Settings:
-    app_password: str
+    app_password: str = ""
     cookie_secure: bool = True
     session_ttl_seconds: int = 8 * 60 * 60
     login_attempt_limit: int = 5
     login_window_seconds: int = 60
+    default_list_articles: int = 100
     max_archive_articles: int = 100
     max_list_pages: int = 50
     artifact_ttl_seconds: int = 15 * 60
@@ -31,8 +32,6 @@ class Settings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
         values = os.environ if env is None else env
         password = values.get("APP_PASSWORD", "")
-        if len(password) < 12:
-            raise ValueError("APP_PASSWORD is required and must contain at least 12 characters")
 
         secure_value = values.get("COOKIE_SECURE", "true").strip().lower()
         if secure_value not in {"true", "false"}:
@@ -44,6 +43,7 @@ class Settings:
             session_ttl_seconds=_as_int(values, "SESSION_TTL_SECONDS", 8 * 60 * 60, 60),
             login_attempt_limit=_as_int(values, "LOGIN_ATTEMPT_LIMIT", 5, 1),
             login_window_seconds=_as_int(values, "LOGIN_WINDOW_SECONDS", 60, 1),
+            default_list_articles=_as_int(values, "DEFAULT_LIST_ARTICLES", 100, 1),
             max_archive_articles=_as_int(values, "MAX_ARCHIVE_ARTICLES", 100, 1),
             max_list_pages=_as_int(values, "MAX_LIST_PAGES", 50, 1),
             artifact_ttl_seconds=_as_int(values, "ARTIFACT_TTL_SECONDS", 15 * 60, 60),

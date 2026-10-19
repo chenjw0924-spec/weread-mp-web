@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 
 
-def test_deployment_requires_password_and_uses_one_local_worker():
+def test_deployment_uses_anonymous_sessions_and_one_local_worker():
     dockerfile = (ROOT / "Dockerfile").read_text()
     compose = (ROOT / "compose.yaml").read_text()
     env = (ROOT / ".env.example").read_text()
@@ -13,9 +13,10 @@ def test_deployment_requires_password_and_uses_one_local_worker():
     assert "USER app" in dockerfile
     assert '"--workers", "1"' in dockerfile
     assert "127.0.0.1:8765:8000" in compose
-    assert "APP_PASSWORD:" in compose
-    assert "APP_PASSWORD=" in env
+    assert "APP_PASSWORD" not in compose
+    assert "APP_PASSWORD" not in env
     assert "COOKIE_SECURE" in readme
+    assert "不再设置访问密码" in readme
     assert "HTTPS" in readme
 
 

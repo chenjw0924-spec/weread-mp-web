@@ -1,4 +1,7 @@
 from pathlib import Path
+import subprocess
+
+from bs4 import BeautifulSoup
 
 
 ROOT = Path(__file__).parents[1]
@@ -9,15 +12,56 @@ def test_frontend_has_required_operator_states_and_controls():
     script = (ROOT / "app/static/app.js").read_text()
     css = (ROOT / "app/static/app.css").read_text()
 
-    for text in ("输入访问密码", "Cookie", "选择已关注公众号", "下载图片", "重试失败文章"):
+    for text in ("Cookie", "我的公众号", "下载图片", "重试失败项", "已收藏", "按日期读取"):
         assert text in html
-    for endpoint in ("/api/login", "/api/weread/connect", "/api/accounts/", "/api/jobs", "/api/jobs/${state.jobId}/retry"):
+    for endpoint in ("/api/session", "/api/weread/connect", "/api/accounts/", "/api/jobs", "/api/jobs/${state.jobId}/retry"):
         assert endpoint in script
+    assert "已读取最近 1 年内" in script
     assert "aria-live" in html
     assert "@media" in css
+
+
+def test_frontend_starts_with_we_read_scan_instead_of_access_password():
+    html = (ROOT / "app/templates/index.html").read_text()
+    script = (ROOT / "app/static/app.js").read_text()
+
+    assert "输入访问密码" not in html
+    assert 'id="password"' not in html
+    assert "startQrLogin()" in script
 
 
 def test_frontend_uses_text_content_for_article_values():
     script = (ROOT / "app/static/app.js").read_text()
     assert "textContent = article.title" in script
     assert "textContent = article.summary" in script
+
+
+def test_scan_status_is_visible_on_the_initial_connection_page():
+    page = BeautifulSoup((ROOT / "app/templates/index.html").read_text(), 'html.parser')
+    status = page.select_one('#connect-panel #connect-message[role="status"]')
+    assert status is not None
+    assert status.get('id') == 'connect-message'
+    assert not any(ancestor.has_attr('hidden') for ancestor in status.parents)
+
+
+def test_scan_events_show_loading_otp_and_verified_success():
+    result = subprocess.run(['node', '--test', 'tests/login-ui.cjs', 'tests/archive-ui.cjs'], cwd=ROOT, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_manual_credentials_are_only_in_explicit_advanced_section():
+    page = BeautifulSoup((ROOT / "app/templates/index.html").read_text(), "html.parser")
+    advanced = page.select_one("details#advanced-connect")
+    assert advanced is not None and not advanced.has_attr("open")
+    assert advanced.select_one("#cookie") is not None
+    assert "扫码连接微信读书" in page.get_text()
+    assert page.select_one("#qr-image") is not None
+    assert page.select_one("#qr-status[role='status']") is not None
+    assert page.select_one(".demo-nav") is None
+    assert page.select_one("#download-dialog").name == "dialog"
+    assert page.select_one("#include-images").get("checked") is None
+    for image in page.select("img"):
+        if image.get("id") == "qr-image":
+            continue
+        assert image.get("src", "").startswith("/static/")
+        assert (ROOT / "app" / image["src"].lstrip("/")).is_file()
