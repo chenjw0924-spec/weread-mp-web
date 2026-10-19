@@ -47,10 +47,10 @@
 - `SessionStore.login(password, now) -> Session | None`; `get(token, now) -> Session | None`; `logout(token) -> None`; session has `connected_cookie: str | None`, `accounts: dict[str, AccountSnapshot]`, and `jobs: dict[str, ArchiveJob]`.
 - `SessionStore.connect_cookie(token, cookie, verifier) -> ConnectionResult` stores credentials only after a successful verifier; `disconnect(token) -> None` clears credentials and account snapshots.
 
-- [ ] Write failing tests for missing APP_PASSWORD, successful/incorrect password, expiration, logout, and failed/successful cookie validation.
-- [ ] Run `pytest tests/test_auth.py -q`; confirm failures identify missing settings/session APIs.
-- [ ] Implement configuration and an in-memory session store with random opaque tokens, constant-time password comparison, expiry pruning, and per-IP login throttling.
-- [ ] Re-run `pytest tests/test_auth.py -q`; all auth tests pass and no test writes credentials to disk.
+- [x] Write failing tests for missing APP_PASSWORD, successful/incorrect password, expiration, logout, and failed/successful cookie validation.
+- [x] Run `pytest tests/test_auth.py -q`; confirm failures identify missing settings/session APIs.
+- [x] Implement configuration and an in-memory session store with random opaque tokens, constant-time password comparison, expiry pruning, and per-IP login throttling.
+- [x] Re-run `pytest tests/test_auth.py -q`; all auth tests pass and no test writes credentials to disk.
 
 ## Task 2: WeRead client and history list
 
@@ -61,10 +61,10 @@
 - `WeReadClient.validate_cookie(cookie) -> list[Account]` calls `/web/shelf/sync` and requires a valid WeRead shelf response.
 - `WeReadClient.list_articles(cookie, book_id, max_articles) -> ArticleListResult` uses `offset=0`, expands `reviews/subReviews/review/mpInfo`, deduplicates by `originalId`, advances by the minimum `createTime`, pauses between pages, and stops on `clearAll`, empty pages, non-advancing/repeated cursors, or caps. Result includes stop reason and returned date range.
 
-- [ ] Write failing fixtures for shelf filtering, 77-style nested entries, duplicate IDs, multiple cursors, `clearAll`, empty page, repeated cursor, expired cookie, and captcha.
-- [ ] Run `pytest tests/test_weread.py -q`; confirm failures are missing client behavior.
-- [ ] Implement a standard-library HTTP client with connect/read timeout, expected WeRead host, bounded pagination, randomized 1.5–3 second page delay, and typed error handling.
-- [ ] Re-run the focused tests and verify all branches stop within the requested page/article caps.
+- [x] Write failing fixtures for shelf filtering, 77-style nested entries, duplicate IDs, multiple cursors, `clearAll`, empty page, repeated cursor, expired cookie, and captcha.
+- [x] Run `pytest tests/test_weread.py -q`; confirm failures are missing client behavior.
+- [x] Implement a standard-library HTTP client with connect/read timeout, expected WeRead host, bounded pagination, randomized 1.5–3 second page delay, and typed error handling.
+- [x] Re-run the focused tests and verify all branches stop within the requested page/article caps.
 
 ## Task 3: Content parsing and Markdown archive format
 
