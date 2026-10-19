@@ -122,6 +122,14 @@ def test_static_ui_is_available(tmp_path):
     assert "微信读书文章归档" in response.text
 
 
+def test_ads_txt_is_available_at_domain_root(tmp_path):
+    app = create_app(settings=settings(tmp_path), weread_client=FakeWeRead(), artifact_dir=tmp_path)
+    response = TestClient(app).get("/ads.txt")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text.strip() == "google.com, pub-6796219903679328, DIRECT, f08c47fec0942fa0"
+
+
 def test_login_page_and_script_require_cache_revalidation(tmp_path):
     app = create_app(settings=settings(tmp_path), weread_client=FakeWeRead(), artifact_dir=tmp_path)
     client = TestClient(app)

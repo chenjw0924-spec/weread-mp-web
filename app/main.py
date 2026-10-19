@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .archive import ArchiveService
@@ -19,6 +19,7 @@ SESSION_COOKIE = "weread_session"
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
 TEMPLATES = ROOT / "app" / "templates"
+ADS_TXT = STATIC / "ads.txt"
 
 
 class CookieRequest(BaseModel):
@@ -105,6 +106,10 @@ def create_app(
         if not path.exists():
             return HTMLResponse("<h1>微信读书公众号归档</h1>")
         return HTMLResponse(path.read_text(encoding="utf-8"))
+
+    @app.get("/ads.txt", response_class=PlainTextResponse)
+    def ads_txt() -> PlainTextResponse:
+        return PlainTextResponse(ADS_TXT.read_text(encoding="utf-8"), media_type="text/plain")
 
     @app.get("/static/{filename}")
     def static_file(filename: str) -> FileResponse:
